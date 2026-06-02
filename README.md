@@ -1,19 +1,75 @@
-# Flow Screenshot Recorder - Tauri + Rust
+# Flow Screenshot Recorder — Tauri + Rust
 
-Versi ringan dari aplikasi **Flow Screenshot Recorder** menggunakan **Tauri + Rust**.
+Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 
-Aplikasi ini dibuat dengan konsep yang sama seperti versi Electron sebelumnya:
+## Fitur
 
-- User pilih **Parent Folder** saja.
-- Aplikasi otomatis membuat folder `TC001`, `TC002`, `TC003`, dan seterusnya.
-- Screenshot dilakukan manual lewat tombol atau shortcut.
-- Selama belum klik **Next TC**, semua screenshot masuk ke TC aktif.
-- Nama file otomatis unik agar tidak duplicate.
-- Tidak ada popup window setelah screenshot via shortcut.
+- Pilih parent folder saja.
+- Auto create folder `TC001`, `TC002`, `TC003`, dst.
+- Screenshot manual via tombol atau shortcut.
+- Mode screenshot **Browser Area**:
+  - Windows: crop dari area address/search bar pada window aktif sehingga taskbar tidak ikut.
+  - macOS/Linux: fallback crop monitor utama dengan offset tetap.
+- `Next TC` menandai TC aktif sebagai `Done`, lalu lanjut TC baru.
+- `Mark Pending` menandai TC aktif sebagai `Pending`, lalu lanjut TC baru.
+- `Resume` dari TC List untuk melanjutkan TC lama/pending.
+- Autosave nama file unik.
+- `metadata.json` per TC.
+- `session.json` untuk resume saat aplikasi ditutup lalu dibuka lagi.
 
----
+## Shortcut
 
-## Struktur Output
+- Windows/Linux: `Ctrl + Shift + S` = Capture
+- Windows/Linux: `Ctrl + Shift + N` = Next TC
+- Windows/Linux: `Ctrl + Shift + P` = Mark Pending
+- Windows/Linux: `Ctrl + Shift + F` = Finish
+
+- Mac: `Command + Shift + S` = Capture
+- Mac: `Command + Shift + N` = Next TC
+- Mac: `Command + Shift + P` = Mark Pending
+- Mac: `Command + Shift + F` = Finish
+
+## Cara run development
+
+```bash
+npm install
+npm run dev
+```
+
+## Build installer
+
+Windows:
+
+```bash
+npm run dist:win
+```
+
+Mac:
+
+```bash
+npm run dist:mac
+```
+
+## GitHub Actions
+
+Workflow sudah tersedia di:
+
+```text
+.github/workflows/build-installers.yml
+```
+
+Upload project ini ke GitHub, lalu buka:
+
+```text
+Actions > Build Tauri Installers > Run workflow
+```
+
+Hasil build bisa diambil dari bagian `Artifacts`:
+
+- `tauri-windows-installer`
+- `tauri-mac-installer`
+
+## Struktur output
 
 ```text
 Parent Folder/
@@ -26,128 +82,12 @@ Parent Folder/
 └── session.json
 ```
 
----
+## Catatan crop screenshot
 
-## Shortcut
+Mode Browser Area cocok untuk flow browser yang window-nya aktif. Untuk Windows, aplikasi mencoba membaca window aktif dan crop dari area address/search bar. Kalau hasil crop terlalu atas atau terlalu bawah, ubah konstanta di `src-tauri/src/main.rs` pada fungsi:
 
-| Aksi | Windows | Mac |
-|---|---|---|
-| Capture Screenshot | Ctrl + Shift + S | Command + Shift + S |
-| Next TC | Ctrl + Shift + N | Command + Shift + N |
-| Finish Flow | Ctrl + Shift + F | Command + Shift + F |
-
-Kalau shortcut bentrok dengan aplikasi lain, tombol manual di UI tetap bisa dipakai.
-
----
-
-## Cara Run di Mac
-
-Syarat satu kali:
-
-1. Install Node.js LTS: https://nodejs.org/
-2. Install Rust: https://rustup.rs/
-
-Lalu:
-
-```text
-Double click RUN_MAC.command
+```rust
+fn browser_crop_insets() -> (u32, u32)
 ```
 
-Kalau Mac menolak file `.command`, klik kanan file tersebut lalu pilih **Open**.
-
----
-
-## Cara Build `.dmg` di Mac
-
-```text
-Double click BUILD_INSTALLER_MAC.command
-```
-
-Hasil build ada di:
-
-```text
-src-tauri/target/release/bundle/dmg/
-```
-
----
-
-## Cara Run di Windows
-
-Syarat satu kali:
-
-1. Install Node.js LTS: https://nodejs.org/
-2. Install Rust: https://rustup.rs/
-
-Lalu:
-
-```text
-Double click RUN_WINDOWS.bat
-```
-
----
-
-## Cara Build `.exe` di Windows
-
-```text
-Double click BUILD_INSTALLER_WINDOWS.bat
-```
-
-Hasil build ada di:
-
-```text
-src-tauri/target/release/bundle/nsis/
-```
-
----
-
-## Build Windows dari Mac
-
-Laptop Mac tidak ideal untuk build `.exe` Windows secara lokal.
-
-Solusi paling aman: pakai **GitHub Actions** yang sudah disediakan di file:
-
-```text
-.github/workflows/build-installers.yml
-```
-
-Alurnya:
-
-```text
-1. Upload source project ini ke GitHub private repo
-2. Buka tab Actions
-3. Jalankan workflow “Build Tauri Installers”
-4. Download artifact Windows .exe dan Mac .dmg
-```
-
-Dengan cara ini, user kantor tidak perlu install dependency dan kamu tidak perlu build Windows dari Mac.
-
----
-
-## Catatan macOS Screen Recording
-
-Kalau screenshot kosong/hitam di Mac, aktifkan permission:
-
-```text
-System Settings
-Privacy & Security
-Screen Recording
-Aktifkan Flow Screenshot Recorder / Terminal
-```
-
-Setelah mengaktifkan permission, tutup dan buka ulang aplikasi.
-
----
-
-## Catatan Ukuran File
-
-Tauri biasanya jauh lebih kecil dari Electron karena tidak membawa Chromium penuh. Hasil installer bisa bervariasi tergantung OS dan dependency, tapi umumnya lebih ringan dibanding versi Electron.
-
----
-
-## Batasan MVP
-
-- Capture masih mengambil layar pertama/primary monitor.
-- Belum ada selector multi-monitor.
-- Belum ada export Word/PDF.
-- Belum ada floating button.
-- Belum ada auto capture setelah klik mouse.
+Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas yang dipotong.

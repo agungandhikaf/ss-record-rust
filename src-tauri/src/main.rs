@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use chrono::Local;
+use image::GenericImageView;
 use screenshots::Screen;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,7 +11,7 @@ use std::{
   thread,
   time::Duration,
 };
-use tauri::{api::dialog::blocking::FileDialogBuilder, Manager};
+use tauri::{api::dialog::blocking::FileDialogBuilder, GlobalShortcutManager, Manager};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize)]
@@ -25,12 +26,28 @@ struct ShortcutRegistry(Mutex<Vec<ShortcutStatus>>);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct TcItem {
+  tc_name: String,
+  folder: String,
+  status: String,
+  step_count: u32,
+  updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SessionState {
   parent_folder: String,
+  #[serde(default)]
   current_tc_name: String,
+  #[serde(default)]
   current_tc_folder: String,
+  #[serde(default)]
   current_step: u32,
+  #[serde(default = "default_session_status")]
   status: String,
+  #[serde(default)]
+  tc_list: Vec<TcItem>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -48,9 +65,28 @@ struct CaptureResult {
 #[serde(rename_all = "camelCase")]
 struct TcMetadata {
   tc_name: String,
+  #[serde(default = "default_tc_status")]
+  status: String,
   created_at: String,
   updated_at: String,
+  #[serde(default)]
   screenshots: Vec<CaptureResult>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CropRect {
+  x: u32,
+  y: u32,
+  width: u32,
+  height: u32,
+}
+
+fn default_session_status() -> String {
+  "idle".to_string()
+}
+
+fn default_tc_status() -> String {
+  "empty".to_string()
 }
 
 fn now_iso() -> String {
@@ -128,39 +164,251 @@ fn find_max_tc_number(parent: &Path) -> u32 {
     .unwrap_or(0)
 }
 
-fn create_tc_state(parent_folder: &str, tc_number: u32) -> Result<SessionState, String> {
-  let parent = Path::new(parent_folder);
-  let tc = tc_name(tc_number);
-  let tc_folder = parent.join(&tc);
-
-  fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder {tc}: {e}"))?;
-
-  let state = SessionState {
-    parent_folder: parent_folder.to_string(),
-    current_tc_name: tc,
-    current_tc_folder: tc_folder.to_string_lossy().to_string(),
-    current_step: 0,
-    status: "recording".to_string(),
-  };
-
-  save_session(&state)?;
-  Ok(state)
-}
-
 fn load_or_init_metadata(parent: &Path, tc_name: &str) -> TcMetadata {
   let path = metadata_path(parent, tc_name);
   if let Ok(content) = fs::read_to_string(path) {
-    if let Ok(metadata) = serde_json::from_str::<TcMetadata>(&content) {
+    if let Ok(mut metadata) = serde_json::from_str::<TcMetadata>(&content) {
+      if metadata.status.trim().is_empty() {
+        metadata.status = default_tc_status();
+      }
       return metadata;
     }
   }
 
   TcMetadata {
     tc_name: tc_name.to_string(),
+    status: default_tc_status(),
     created_at: now_iso(),
     updated_at: now_iso(),
     screenshots: Vec::new(),
   }
+}
+
+fn save_tc_metadata_status(parent: &Path, tc_name: &str, status: &str) -> Result<(), String> {
+  let mut metadata = load_or_init_metadata(parent, tc_name);
+  metadata.status = status.to_string();
+  metadata.updated_at = now_iso();
+  write_json(&metadata_path(parent, tc_name), &metadata)
+}
+
+fn sort_tc_list(tc_list: &mut Vec<TcItem>) {
+  tc_list.sort_by_key(|item| parse_tc_number(&item.tc_name).unwrap_or(u32::MAX));
+}
+
+fn upsert_tc_item(state: &mut SessionState, tc_name: &str, status: &str) {
+  let parent = Path::new(&state.parent_folder);
+  let folder = parent.join(tc_name);
+  let folder_string = folder.to_string_lossy().to_string();
+  let step_count = count_png_files(&folder);
+  let updated_at = now_iso();
+
+  if let Some(item) = state.tc_list.iter_mut().find(|item| item.tc_name == tc_name) {
+    item.folder = folder_string;
+    item.status = status.to_string();
+    item.step_count = step_count;
+    item.updated_at = updated_at;
+  } else {
+    state.tc_list.push(TcItem {
+      tc_name: tc_name.to_string(),
+      folder: folder_string,
+      status: status.to_string(),
+      step_count,
+      updated_at,
+    });
+  }
+
+  sort_tc_list(&mut state.tc_list);
+}
+
+fn sync_tc_list_with_folders(state: &mut SessionState) {
+  let parent = Path::new(&state.parent_folder);
+
+  if let Ok(entries) = fs::read_dir(parent) {
+    for entry in entries.flatten() {
+      if !entry.path().is_dir() {
+        continue;
+      }
+
+      let name = entry.file_name().to_string_lossy().to_string();
+      if parse_tc_number(&name).is_none() {
+        continue;
+      }
+
+      if !state.tc_list.iter().any(|item| item.tc_name == name) {
+        let step_count = count_png_files(&entry.path());
+        let status = if state.status == "recording" && state.current_tc_name == name {
+          "in_progress"
+        } else if step_count > 0 {
+          "done"
+        } else {
+          "empty"
+        };
+
+        state.tc_list.push(TcItem {
+          tc_name: name.clone(),
+          folder: entry.path().to_string_lossy().to_string(),
+          status: status.to_string(),
+          step_count,
+          updated_at: now_iso(),
+        });
+      }
+    }
+  }
+
+  for item in state.tc_list.iter_mut() {
+    let folder = parent.join(&item.tc_name);
+    item.folder = folder.to_string_lossy().to_string();
+    item.step_count = count_png_files(&folder);
+    if item.status.trim().is_empty() {
+      item.status = if item.step_count > 0 { "done" } else { "empty" }.to_string();
+    }
+  }
+
+  if !state.current_tc_name.is_empty() && state.status == "recording" {
+    let current_tc = state.current_tc_name.clone();
+    upsert_tc_item(state, &current_tc, "in_progress");
+  }
+
+  sort_tc_list(&mut state.tc_list);
+}
+
+fn create_or_switch_tc_state(
+  parent_folder: &str,
+  mut state: SessionState,
+  tc_number: u32,
+  new_status: &str,
+) -> Result<SessionState, String> {
+  let parent = Path::new(parent_folder);
+  let tc = tc_name(tc_number);
+  let tc_folder = parent.join(&tc);
+
+  fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder {tc}: {e}"))?;
+
+  state.parent_folder = parent_folder.to_string();
+  state.current_tc_name = tc.clone();
+  state.current_tc_folder = tc_folder.to_string_lossy().to_string();
+  state.current_step = count_png_files(&tc_folder);
+  state.status = "recording".to_string();
+  upsert_tc_item(&mut state, &tc, new_status);
+  save_tc_metadata_status(parent, &tc, new_status)?;
+  save_session(&state)?;
+
+  Ok(state)
+}
+
+fn normalize_session(mut state: SessionState) -> SessionState {
+  if !state.current_tc_folder.is_empty() {
+    state.current_step = count_png_files(Path::new(&state.current_tc_folder));
+  }
+  sync_tc_list_with_folders(&mut state);
+  state
+}
+
+#[cfg(target_os = "windows")]
+fn active_window_bounds() -> Option<(i32, i32, i32, i32)> {
+  use windows_sys::Win32::Foundation::RECT;
+  use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+  use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect, IsIconic};
+
+  unsafe {
+    let hwnd = GetForegroundWindow();
+    if hwnd == 0 || IsIconic(hwnd) != 0 {
+      return None;
+    }
+
+    let mut rect = RECT {
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+    };
+
+    // DwmGetWindowAttribute memberi batas visual window yang lebih rapi daripada GetWindowRect
+    // karena tidak memasukkan invisible resize border di Windows modern.
+    let hr = DwmGetWindowAttribute(
+      hwnd,
+      DWMWA_EXTENDED_FRAME_BOUNDS,
+      &mut rect as *mut _ as *mut _,
+      std::mem::size_of::<RECT>() as u32,
+    );
+
+    if hr != 0 && GetWindowRect(hwnd, &mut rect as *mut _) == 0 {
+      return None;
+    }
+
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if width <= 120 || height <= 120 {
+      return None;
+    }
+
+    Some((rect.left, rect.top, rect.right, rect.bottom))
+  }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn active_window_bounds() -> Option<(i32, i32, i32, i32)> {
+  None
+}
+
+fn browser_crop_insets() -> (u32, u32) {
+  // Mode Browser Area:
+  // - Windows: crop dari area address/search bar pada window aktif. Taskbar tidak ikut karena yang dicrop adalah window aktif.
+  // - macOS/Linux fallback: crop dari screenshot monitor utama. Angka ini bisa disesuaikan kalau browser theme berbeda.
+  if cfg!(target_os = "windows") {
+    (48, 0)
+  } else if cfg!(target_os = "macos") {
+    (56, 72)
+  } else {
+    (52, 0)
+  }
+}
+
+fn clamp_crop_rect(rect: CropRect, image_width: u32, image_height: u32) -> Option<CropRect> {
+  if image_width == 0 || image_height == 0 {
+    return None;
+  }
+
+  let x = rect.x.min(image_width.saturating_sub(1));
+  let y = rect.y.min(image_height.saturating_sub(1));
+  let max_width = image_width.saturating_sub(x);
+  let max_height = image_height.saturating_sub(y);
+  let width = rect.width.min(max_width);
+  let height = rect.height.min(max_height);
+
+  if width < 80 || height < 80 {
+    return None;
+  }
+
+  Some(CropRect { x, y, width, height })
+}
+
+fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRect> {
+  let (top_crop, bottom_crop) = browser_crop_insets();
+
+  if let Some((left, top, right, bottom)) = active_window_bounds() {
+    let x = left.max(0) as u32;
+    let y = top.max(0) as u32 + top_crop;
+    let right = right.max(0) as u32;
+    let bottom = bottom.max(0) as u32;
+    let width = right.saturating_sub(x);
+    let height = bottom.saturating_sub(y);
+    return clamp_crop_rect(CropRect { x, y, width, height }, image_width, image_height);
+  }
+
+  // Fallback untuk macOS/Linux: crop monitor utama dengan offset tetap.
+  let y = top_crop.min(image_height.saturating_sub(1));
+  let height = image_height.saturating_sub(y).saturating_sub(bottom_crop);
+  clamp_crop_rect(
+    CropRect {
+      x: 0,
+      y,
+      width: image_width,
+      height,
+    },
+    image_width,
+    image_height,
+  )
 }
 
 #[tauri::command]
@@ -175,12 +423,8 @@ fn choose_parent_folder() -> Option<String> {
 fn read_session(parent_folder: String) -> Result<SessionState, String> {
   let parent = Path::new(&parent_folder);
 
-  if let Some(mut state) = read_session_file(parent) {
-    // Saat file di folder TC berubah manual, jumlah step dihitung ulang agar UI tidak menyesatkan.
-    if !state.current_tc_folder.is_empty() {
-      state.current_step = count_png_files(Path::new(&state.current_tc_folder));
-    }
-    return Ok(state);
+  if let Some(state) = read_session_file(parent) {
+    return Ok(normalize_session(state));
   }
 
   Ok(SessionState {
@@ -189,6 +433,7 @@ fn read_session(parent_folder: String) -> Result<SessionState, String> {
     current_tc_folder: String::new(),
     current_step: 0,
     status: "idle".to_string(),
+    tc_list: Vec::new(),
   })
 }
 
@@ -197,17 +442,28 @@ fn start_or_resume_flow(parent_folder: String) -> Result<SessionState, String> {
   let parent = Path::new(&parent_folder);
   fs::create_dir_all(parent).map_err(|e| format!("Gagal membuat parent folder: {e}"))?;
 
-  if let Some(mut state) = read_session_file(parent) {
+  if let Some(state) = read_session_file(parent) {
+    let mut state = normalize_session(state);
     if state.status == "recording" && !state.current_tc_name.is_empty() {
-      state.current_step = count_png_files(Path::new(&state.current_tc_folder));
       save_session(&state)?;
       return Ok(state);
     }
+
+    // Kalau session sudah finished, mulai TC baru tanpa overwrite folder lama.
+    let next_number = find_max_tc_number(parent) + 1;
+    return create_or_switch_tc_state(&parent_folder, state, next_number.max(1), "in_progress");
   }
 
-  // Kalau session belum ada atau sudah finished, buat TC berikutnya tanpa overwrite folder lama.
-  let next_number = find_max_tc_number(parent) + 1;
-  create_tc_state(&parent_folder, next_number.max(1))
+  let state = SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: String::new(),
+    current_tc_folder: String::new(),
+    current_step: 0,
+    status: "idle".to_string(),
+    tc_list: Vec::new(),
+  };
+
+  create_or_switch_tc_state(&parent_folder, state, 1, "in_progress")
 }
 
 #[tauri::command]
@@ -215,11 +471,90 @@ fn next_tc(parent_folder: String, current_tc_name: String) -> Result<SessionStat
   let parent = Path::new(&parent_folder);
   fs::create_dir_all(parent).map_err(|e| format!("Gagal membuat parent folder: {e}"))?;
 
-  // Next TC dibuat berdasarkan angka terbesar yang sudah ada, bukan sekadar current+1.
-  // Ini mencegah overwrite kalau folder TC sudah pernah dibuat sebelumnya.
+  let mut state = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: current_tc_name.clone(),
+    current_tc_folder: parent.join(&current_tc_name).to_string_lossy().to_string(),
+    current_step: 0,
+    status: "recording".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  state = normalize_session(state);
+
+  if !current_tc_name.trim().is_empty() {
+    upsert_tc_item(&mut state, &current_tc_name, "done");
+    save_tc_metadata_status(parent, &current_tc_name, "done")?;
+  }
+
   let current_number = parse_tc_number(&current_tc_name).unwrap_or(0);
   let next_number = find_max_tc_number(parent).max(current_number) + 1;
-  create_tc_state(&parent_folder, next_number)
+  create_or_switch_tc_state(&parent_folder, state, next_number, "in_progress")
+}
+
+#[tauri::command]
+fn mark_pending(parent_folder: String, current_tc_name: String) -> Result<SessionState, String> {
+  let parent = Path::new(&parent_folder);
+  fs::create_dir_all(parent).map_err(|e| format!("Gagal membuat parent folder: {e}"))?;
+
+  if current_tc_name.trim().is_empty() {
+    return Err("Belum ada TC aktif untuk ditandai Pending.".to_string());
+  }
+
+  let mut state = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: current_tc_name.clone(),
+    current_tc_folder: parent.join(&current_tc_name).to_string_lossy().to_string(),
+    current_step: 0,
+    status: "recording".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  state = normalize_session(state);
+  upsert_tc_item(&mut state, &current_tc_name, "pending");
+  save_tc_metadata_status(parent, &current_tc_name, "pending")?;
+
+  let current_number = parse_tc_number(&current_tc_name).unwrap_or(0);
+  let next_number = find_max_tc_number(parent).max(current_number) + 1;
+  create_or_switch_tc_state(&parent_folder, state, next_number, "in_progress")
+}
+
+#[tauri::command]
+fn resume_tc(parent_folder: String, target_tc_name: String) -> Result<SessionState, String> {
+  let parent = Path::new(&parent_folder);
+  let target_folder = parent.join(&target_tc_name);
+
+  if parse_tc_number(&target_tc_name).is_none() || !target_folder.exists() {
+    return Err(format!("{target_tc_name} tidak ditemukan di parent folder."));
+  }
+
+  let mut state = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: String::new(),
+    current_tc_folder: String::new(),
+    current_step: 0,
+    status: "idle".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  state = normalize_session(state);
+
+  // Saat user resume TC lama, TC aktif sebelumnya ditandai Pending agar tidak hilang dari alur kerja.
+  if state.status == "recording" && !state.current_tc_name.is_empty() && state.current_tc_name != target_tc_name {
+    let previous_tc = state.current_tc_name.clone();
+    upsert_tc_item(&mut state, &previous_tc, "pending");
+    save_tc_metadata_status(parent, &previous_tc, "pending")?;
+  }
+
+  state.current_tc_name = target_tc_name.clone();
+  state.current_tc_folder = target_folder.to_string_lossy().to_string();
+  state.current_step = count_png_files(&target_folder);
+  state.status = "recording".to_string();
+  upsert_tc_item(&mut state, &target_tc_name, "in_progress");
+  save_tc_metadata_status(parent, &target_tc_name, "in_progress")?;
+  save_session(&state)?;
+
+  Ok(state)
 }
 
 fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32) -> Result<CaptureResult, String> {
@@ -235,7 +570,8 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
   let tc_folder = parent.join(&current_tc_name);
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
 
-  let step = current_step + 1;
+  let existing_count = count_png_files(&tc_folder);
+  let step = current_step.max(existing_count) + 1;
   let timestamp_for_file = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
   let unique_id = Uuid::new_v4().simple().to_string()[0..4].to_string();
   let file_name = format!("{:03}_{}_{}.png", step, timestamp_for_file, unique_id);
@@ -244,11 +580,23 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
   let screens = Screen::all().map_err(|e| format!("Gagal membaca layar: {e}"))?;
   let screen = screens.first().ok_or_else(|| "Tidak ada layar yang bisa dibaca.".to_string())?;
 
-  // MVP: capture monitor pertama/primary. Multi monitor selector bisa ditambahkan di versi berikutnya.
+  // Browser Area Mode:
+  // Ambil layar utama lalu crop agar hasil dimulai dari area address/search bar.
+  // Di Windows, crop memakai batas window aktif sehingga taskbar tidak ikut.
+  // Di macOS/Linux, fallback memakai offset tetap pada monitor utama.
   let image = screen.capture().map_err(|e| format!("Gagal mengambil screenshot: {e}"))?;
-  image
-    .save(&file_path)
-    .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
+  let (image_width, image_height) = image.dimensions();
+
+  if let Some(crop) = calculate_browser_crop(image_width, image_height) {
+    let cropped = image::imageops::crop_imm(&image, crop.x, crop.y, crop.width, crop.height).to_image();
+    cropped
+      .save(&file_path)
+      .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
+  } else {
+    image
+      .save(&file_path)
+      .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
+  }
 
   let capture = CaptureResult {
     tc_name: current_tc_name.clone(),
@@ -260,17 +608,26 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
   };
 
   let mut metadata = load_or_init_metadata(parent, &current_tc_name);
+  metadata.status = "in_progress".to_string();
   metadata.updated_at = now_iso();
   metadata.screenshots.push(capture.clone());
   write_json(&metadata_path(parent, &current_tc_name), &metadata)?;
 
-  let session = SessionState {
-    parent_folder,
-    current_tc_name,
+  let mut session = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: current_tc_name.clone(),
     current_tc_folder: tc_folder.to_string_lossy().to_string(),
     current_step: step,
     status: "recording".to_string(),
-  };
+    tc_list: Vec::new(),
+  });
+
+  session.current_tc_name = current_tc_name;
+  session.current_tc_folder = tc_folder.to_string_lossy().to_string();
+  session.current_step = step;
+  session.status = "recording".to_string();
+  let session_tc = session.current_tc_name.clone();
+  upsert_tc_item(&mut session, &session_tc, "in_progress");
   save_session(&session)?;
 
   Ok(capture)
@@ -286,7 +643,7 @@ fn capture_screenshot(
 ) -> Result<CaptureResult, String> {
   if hide_window {
     let _ = window.hide();
-    thread::sleep(Duration::from_millis(280));
+    thread::sleep(Duration::from_millis(320));
   }
 
   let result = do_capture(parent_folder, current_tc_name, current_step);
@@ -308,7 +665,15 @@ fn finish_flow(parent_folder: String) -> Result<SessionState, String> {
     current_tc_folder: String::new(),
     current_step: 0,
     status: "idle".to_string(),
+    tc_list: Vec::new(),
   });
+
+  state = normalize_session(state);
+  if !state.current_tc_name.is_empty() {
+    let current_tc = state.current_tc_name.clone();
+    upsert_tc_item(&mut state, &current_tc, "done");
+    save_tc_metadata_status(parent, &current_tc, "done")?;
+  }
 
   state.status = "finished".to_string();
   save_session(&state)?;
@@ -340,6 +705,7 @@ fn main() {
       let shortcuts = [
         ("CommandOrControl+Shift+S", "shortcut-capture"),
         ("CommandOrControl+Shift+N", "shortcut-next-tc"),
+        ("CommandOrControl+Shift+P", "shortcut-mark-pending"),
         ("CommandOrControl+Shift+F", "shortcut-finish"),
       ];
 
@@ -370,6 +736,8 @@ fn main() {
       read_session,
       start_or_resume_flow,
       next_tc,
+      mark_pending,
+      resume_tc,
       capture_screenshot,
       finish_flow,
       open_path,

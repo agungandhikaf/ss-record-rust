@@ -10,11 +10,15 @@ const elements = {
   startBtn: document.querySelector('#startBtn'),
   captureBtn: document.querySelector('#captureBtn'),
   nextTcBtn: document.querySelector('#nextTcBtn'),
+  markPendingBtn: document.querySelector('#markPendingBtn'),
   finishBtn: document.querySelector('#finishBtn'),
+  refreshTcListBtn: document.querySelector('#refreshTcListBtn'),
   openParentBtn: document.querySelector('#openParentBtn'),
   openTcBtn: document.querySelector('#openTcBtn'),
+  tcList: document.querySelector('#tcList'),
   captureShortcut: document.querySelector('#captureShortcut'),
   nextTcShortcut: document.querySelector('#nextTcShortcut'),
+  pendingShortcut: document.querySelector('#pendingShortcut'),
   finishShortcut: document.querySelector('#finishShortcut'),
   shortcutWarning: document.querySelector('#shortcutWarning'),
   lastCapturePanel: document.querySelector('#lastCapturePanel'),
@@ -30,10 +34,12 @@ let state = {
   currentTcFolder: '',
   currentStep: 0,
   status: 'idle',
+  tcList: [],
   lastCapture: null,
   shortcuts: {
     capture: isMac ? '⌘ + Shift + S' : 'Ctrl + Shift + S',
     nextTc: isMac ? '⌘ + Shift + N' : 'Ctrl + Shift + N',
+    pending: isMac ? '⌘ + Shift + P' : 'Ctrl + Shift + P',
     finish: isMac ? '⌘ + Shift + F' : 'Ctrl + Shift + F'
   },
   shortcutStatus: []
@@ -61,19 +67,72 @@ async function notifyUser(title, body) {
   }
 }
 
-function setBusy(isBusy) {
-  busy = isBusy;
-  [
+function allButtons() {
+  return [
     elements.chooseFolderBtn,
     elements.startBtn,
     elements.captureBtn,
     elements.nextTcBtn,
+    elements.markPendingBtn,
     elements.finishBtn,
+    elements.refreshTcListBtn,
     elements.openParentBtn,
-    elements.openTcBtn
-  ].forEach((button) => {
+    elements.openTcBtn,
+    ...elements.tcList.querySelectorAll('button')
+  ].filter(Boolean);
+}
+
+function setBusy(isBusy) {
+  busy = isBusy;
+  allButtons().forEach((button) => {
     button.disabled = isBusy;
   });
+}
+
+function statusLabel(status) {
+  const map = {
+    in_progress: 'In Progress',
+    pending: 'Pending',
+    done: 'Done',
+    empty: 'Empty'
+  };
+  return map[status] || status || '-';
+}
+
+function statusClass(status) {
+  return ['in_progress', 'pending', 'done', 'empty'].includes(status) ? status : 'empty';
+}
+
+function renderTcList() {
+  const tcList = Array.isArray(state.tcList) ? state.tcList : [];
+
+  if (!tcList.length) {
+    elements.tcList.className = 'tc-list empty';
+    elements.tcList.textContent = state.parentFolder
+      ? 'Belum ada TC. Klik Start / Resume Flow dulu.'
+      : 'Belum ada TC. Pilih parent folder lalu klik Start.';
+    return;
+  }
+
+  elements.tcList.className = 'tc-list';
+  elements.tcList.innerHTML = tcList
+    .map((item) => {
+      const isCurrent = item.tcName === state.currentTcName && state.status === 'recording';
+      const canResume = state.parentFolder && item.tcName && !isCurrent;
+      return `
+        <div class="tc-row ${isCurrent ? 'current' : ''}">
+          <div class="tc-main">
+            <strong>${item.tcName}</strong>
+            <span class="tc-status ${statusClass(item.status)}">${statusLabel(item.status)}</span>
+          </div>
+          <div class="tc-meta">
+            <span>${item.stepCount || 0} screenshot</span>
+            <span>${isCurrent ? 'Aktif sekarang' : item.updatedAt || ''}</span>
+          </div>
+          <button class="resume-btn" data-tc-name="${item.tcName}" ${canResume ? '' : 'disabled'}>${isCurrent ? 'Active' : 'Resume'}</button>
+        </div>`;
+    })
+    .join('');
 }
 
 function render() {
@@ -90,6 +149,7 @@ function render() {
 
   elements.captureShortcut.textContent = state.shortcuts.capture;
   elements.nextTcShortcut.textContent = state.shortcuts.nextTc;
+  elements.pendingShortcut.textContent = state.shortcuts.pending;
   elements.finishShortcut.textContent = state.shortcuts.finish;
 
   const failedShortcuts = (state.shortcutStatus || []).filter((item) => !item.registered);
@@ -107,13 +167,17 @@ function render() {
     elements.lastCapturePanel.classList.add('hidden');
   }
 
+  renderTcList();
+
   if (!busy) {
     const hasParent = Boolean(state.parentFolder);
     const isRecording = state.status === 'recording';
     elements.startBtn.disabled = !hasParent;
     elements.captureBtn.disabled = !isRecording;
     elements.nextTcBtn.disabled = !isRecording;
+    elements.markPendingBtn.disabled = !isRecording;
     elements.finishBtn.disabled = !hasParent;
+    elements.refreshTcListBtn.disabled = !hasParent;
     elements.openParentBtn.disabled = !hasParent;
     elements.openTcBtn.disabled = !state.currentTcFolder;
   }
@@ -148,6 +212,14 @@ async function chooseFolder() {
   render();
 }
 
+async function refreshSession() {
+  if (!state.parentFolder) return;
+  const restored = await invoke('read_session', { parentFolder: state.parentFolder });
+  state = { ...state, ...restored };
+  showToast('TC List diperbarui.');
+  render();
+}
+
 async function startFlow() {
   if (!state.parentFolder) {
     showToast('Pilih parent folder dulu.', 'error');
@@ -179,6 +251,10 @@ async function captureScreenshot(hideWindow = false) {
     lastCapture: capture
   };
 
+  // Refresh session setelah capture supaya step_count di TC List ikut update.
+  const restored = await invoke('read_session', { parentFolder: state.parentFolder });
+  state = { ...state, ...restored, lastCapture: capture };
+
   render();
   showToast(`Screenshot tersimpan: ${capture.fileName}`);
   await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
@@ -193,7 +269,34 @@ async function nextTc() {
   });
 
   state = { ...state, ...nextState, lastCapture: null };
-  showToast(`Pindah ke ${state.currentTcName}.`);
+  showToast(`Pindah ke ${state.currentTcName}. TC sebelumnya Done.`);
+  render();
+}
+
+async function markPending() {
+  if (!state.parentFolder || state.status !== 'recording') return;
+
+  const previousTc = state.currentTcName;
+  const nextState = await invoke('mark_pending', {
+    parentFolder: state.parentFolder,
+    currentTcName: state.currentTcName
+  });
+
+  state = { ...state, ...nextState, lastCapture: null };
+  showToast(`${previousTc} ditandai Pending. Lanjut ke ${state.currentTcName}.`);
+  render();
+}
+
+async function resumeTc(tcName) {
+  if (!state.parentFolder || !tcName) return;
+
+  const nextState = await invoke('resume_tc', {
+    parentFolder: state.parentFolder,
+    targetTcName: tcName
+  });
+
+  state = { ...state, ...nextState, lastCapture: null };
+  showToast(`Resume ${state.currentTcName}. Screenshot berikutnya lanjut dari step ${state.currentStep + 1}.`);
   render();
 }
 
@@ -215,14 +318,23 @@ function registerButtonHandlers() {
   elements.captureBtn.addEventListener('click', () => runAction(() => captureScreenshot(true)));
 
   elements.nextTcBtn.addEventListener('click', () => runAction(nextTc));
+  elements.markPendingBtn.addEventListener('click', () => runAction(markPending));
   elements.finishBtn.addEventListener('click', () => runAction(finishFlow));
+  elements.refreshTcListBtn.addEventListener('click', () => runAction(refreshSession));
   elements.openParentBtn.addEventListener('click', () => runAction(() => invoke('open_path', { path: state.parentFolder })));
   elements.openTcBtn.addEventListener('click', () => runAction(() => invoke('open_path', { path: state.currentTcFolder })));
+
+  elements.tcList.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-tc-name]');
+    if (!button || button.disabled) return;
+    runAction(() => resumeTc(button.dataset.tcName));
+  });
 }
 
 async function registerShortcutListeners() {
   await listen('shortcut-capture', () => runAction(() => captureScreenshot(false)));
   await listen('shortcut-next-tc', () => runAction(nextTc));
+  await listen('shortcut-mark-pending', () => runAction(markPending));
   await listen('shortcut-finish', () => runAction(finishFlow));
 
   try {

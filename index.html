@@ -41,7 +41,11 @@
         <button id="captureBtn" class="capture-btn">Capture Screenshot</button>
         <div class="button-row">
           <button id="nextTcBtn" class="secondary-btn">Next TC</button>
+          <button id="markPendingBtn" class="warning-btn">Mark Pending</button>
+        </div>
+        <div class="button-row">
           <button id="finishBtn" class="danger-btn">Finish</button>
+          <button id="refreshTcListBtn" class="ghost-btn">Refresh TC List</button>
         </div>
         <div class="button-row">
           <button id="openParentBtn" class="ghost-btn">Open Parent</button>
@@ -49,11 +53,22 @@
         </div>
       </section>
 
+      <section class="panel tc-list-panel">
+        <div class="panel-title-row">
+          <div>
+            <h2>TC List</h2>
+            <p>Resume TC lama kalau ada flow yang sempat Pending.</p>
+          </div>
+        </div>
+        <div id="tcList" class="tc-list empty">Belum ada TC. Pilih parent folder lalu klik Start.</div>
+      </section>
+
       <section class="panel shortcut-panel">
         <h2>Shortcut</h2>
         <div class="shortcut-list">
           <div><kbd id="captureShortcut">Ctrl/⌘ + Shift + S</kbd><span>Capture</span></div>
           <div><kbd id="nextTcShortcut">Ctrl/⌘ + Shift + N</kbd><span>Next TC</span></div>
+          <div><kbd id="pendingShortcut">Ctrl/⌘ + Shift + P</kbd><span>Mark Pending</span></div>
           <div><kbd id="finishShortcut">Ctrl/⌘ + Shift + F</kbd><span>Finish</span></div>
         </div>
         <p id="shortcutWarning" class="warning-text hidden"></p>
@@ -66,7 +81,8 @@
 
       <section class="panel info-panel">
         <h2>Konsep Flow</h2>
-        <p>Selama belum klik <strong>Next TC</strong>, semua screenshot masuk ke folder TC aktif. Kalau flow sudah beda, tekan <strong>Next TC</strong>.</p>
+        <p><strong>Next TC</strong> menandai TC aktif sebagai Done dan pindah ke TC baru. <strong>Mark Pending</strong> menandai TC aktif sebagai Pending, lalu lanjut ke TC baru. Untuk melanjutkan TC lama, klik <strong>Resume</strong> pada TC List.</p>
+        <p class="small-note">Mode screenshot: Browser Area. Di Windows, aplikasi mencoba crop dari area address/search bar pada window aktif sehingga taskbar tidak ikut. Di Mac, aplikasi memakai crop offset fallback karena struktur window berbeda.</p>
       </section>
 
       <div id="toast" class="toast hidden"></div>

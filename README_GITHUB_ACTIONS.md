@@ -1,23 +1,17 @@
-# Build `.exe` dan `.dmg` Pakai GitHub Actions
+# Build Tauri Installer via GitHub Actions
 
-Ini solusi yang disarankan kalau:
+Pastikan repo berisi folder:
 
-- Laptop kamu Mac, tapi butuh build Windows `.exe`.
-- PC kantor tidak bisa install dependency karena jaringan kantor memblokir npm/cargo.
-- Kamu tidak mau kirim folder project yang besar.
+```text
+src-tauri/
+```
+
+Kalau tidak ada folder `src-tauri`, berarti itu bukan project Tauri.
 
 ## Langkah
 
-### 1. Buat repo GitHub private
-
-```text
-GitHub > New Repository > Private
-Nama: flow-screenshot-recorder-tauri
-```
-
-### 2. Upload source project
-
-Upload semua file project ini, tapi jangan upload folder berikut:
+1. Upload source project ini ke GitHub.
+2. Jangan upload folder besar berikut:
 
 ```text
 node_modules/
@@ -25,41 +19,33 @@ dist/
 src-tauri/target/
 ```
 
-### 3. Jalankan Actions
-
-Masuk ke repo:
+3. Pastikan file ini ada:
 
 ```text
-Actions > Build Tauri Installers > Run workflow
+.github/workflows/build-installers.yml
 ```
 
-### 4. Download hasil build
-
-Setelah workflow selesai, buka run terakhir lalu download artifact:
+4. Buka tab GitHub `Actions`.
+5. Pilih `Build Tauri Installers`.
+6. Klik `Run workflow`.
+7. Tunggu sampai success.
+8. Download artifact:
 
 ```text
-flow-screenshot-recorder-windows
-flow-screenshot-recorder-macos
+tauri-windows-installer
+tauri-mac-installer
 ```
 
-Di dalamnya akan ada installer:
+## Output
+
+Windows artifact biasanya berisi file `.exe` dari folder:
 
 ```text
-Windows: .exe
-Mac: .dmg
+src-tauri/target/release/bundle/nsis/
 ```
 
-File itulah yang dibagikan ke user akhir.
-
-## User akhir tidak perlu install
-
-User akhir tidak perlu:
+Mac artifact biasanya berisi file `.dmg` dari folder:
 
 ```text
-Node.js
-Rust
-npm install
-cargo build
+src-tauri/target/release/bundle/dmg/
 ```
-
-User akhir cukup install file `.exe` atau `.dmg` hasil artifact GitHub Actions.
