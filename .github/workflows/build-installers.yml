@@ -3,13 +3,27 @@ name: Build Tauri Installers
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
-  build-windows:
-    name: Build Windows EXE
-    runs-on: windows-2022
+  build:
+    name: Build ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: Windows
+            os: windows-latest
+            build_command: npm run dist:win
+            artifact_name: flow-screenshot-recorder-windows
+            artifact_path: src-tauri/target/release/bundle/nsis/*.exe
+          - name: macOS
+            os: macos-latest
+            build_command: npm run dist:mac
+            artifact_name: flow-screenshot-recorder-macos
+            artifact_path: src-tauri/target/release/bundle/dmg/*.dmg
 
     steps:
       - name: Checkout source
@@ -18,62 +32,25 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
-      - name: Setup Rust
+      - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust
-        uses: swatinem/rust-cache@v2
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build Windows installer
-        run: npm run dist:win
+      - name: Build installer
+        run: ${{ matrix.platform.build_command }}
 
-      - name: Upload Windows installer
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-windows-installer
+          name: ${{ matrix.platform.artifact_name }}
+          path: ${{ matrix.platform.artifact_path }}
           if-no-files-found: error
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-
-  build-mac:
-    name: Build Mac DMG
-    runs-on: macos-14
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install frontend dependencies
-        run: npm install
-
-      - name: Build Mac installer
-        run: npm run dist:mac
-
-      - name: Upload Mac installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: tauri-mac-installer
-          if-no-files-found: error
-          path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
