@@ -1,0 +1,22 @@
+{
+  "name": "flow-screenshot-recorder-tauri",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Manual screenshot recorder per TC folder using Tauri + Rust.",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:vite": "vite build",
+    "dev:vite": "vite --host 127.0.0.1",
+    "dist:win": "tauri build --bundles nsis",
+    "dist:mac": "tauri build --bundles dmg"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.6.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3",
+    "vite": "^5.4.11"
+  }
+}

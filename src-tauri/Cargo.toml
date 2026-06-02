@@ -1,0 +1,23 @@
+[package]
+name = "flow-screenshot-recorder-tauri"
+version = "1.0.0"
+description = "Manual screenshot recorder per TC folder using Tauri + Rust"
+authors = ["Teman Akun"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+open = "5"
+screenshots = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "1.6", features = ["api-all"] }
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flow Screenshot Recorder</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Manual Screenshot Tool</p>
+          <h1>Flow Screenshot Recorder</h1>
+          <p class="subtitle">Pilih parent folder, lalu aplikasi otomatis membuat TC001, TC002, dan seterusnya.</p>
+        </div>
+        <div id="statusBadge" class="status-badge idle">Idle</div>
+      </section>
+
+      <section class="panel">
+        <label class="field-label">Parent Folder</label>
+        <div class="folder-picker">
+          <div id="parentFolder" class="folder-value">Belum dipilih</div>
+          <button id="chooseFolderBtn" class="secondary-btn">Browse</button>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Current TC</span>
+          <strong id="currentTc">-</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Captured</span>
+          <strong id="capturedCount">0</strong>
+        </div>
+      </section>
+
+      <section class="panel action-panel">
+        <button id="startBtn" class="primary-btn">Start / Resume Flow</button>
+        <button id="captureBtn" class="capture-btn">Capture Screenshot</button>
+        <div class="button-row">
+          <button id="nextTcBtn" class="secondary-btn">Next TC</button>
+          <button id="finishBtn" class="danger-btn">Finish</button>
+        </div>
+        <div class="button-row">
+          <button id="openParentBtn" class="ghost-btn">Open Parent</button>
+          <button id="openTcBtn" class="ghost-btn">Open Current TC</button>
+        </div>
+      </section>
+
+      <section class="panel shortcut-panel">
+        <h2>Shortcut</h2>
+        <div class="shortcut-list">
+          <div><kbd id="captureShortcut">Ctrl/⌘ + Shift + S</kbd><span>Capture</span></div>
+          <div><kbd id="nextTcShortcut">Ctrl/⌘ + Shift + N</kbd><span>Next TC</span></div>
+          <div><kbd id="finishShortcut">Ctrl/⌘ + Shift + F</kbd><span>Finish</span></div>
+        </div>
+        <p id="shortcutWarning" class="warning-text hidden"></p>
+      </section>
+
+      <section id="lastCapturePanel" class="panel last-capture hidden">
+        <h2>Last Capture</h2>
+        <p id="lastCaptureText">-</p>
+      </section>
+
+      <section class="panel info-panel">
+        <h2>Konsep Flow</h2>
+        <p>Selama belum klik <strong>Next TC</strong>, semua screenshot masuk ke folder TC aktif. Kalau flow sudah beda, tekan <strong>Next TC</strong>.</p>
+      </section>
+
+      <div id="toast" class="toast hidden"></div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
