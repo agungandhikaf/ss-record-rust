@@ -1,6 +1,6 @@
 [package]
 name = "flow-screenshot-recorder-tauri"
-version = "1.0.1"
+version = "1.0.3"
 description = "Manual screenshot recorder per TC folder using Tauri + Rust"
 authors = ["Teman Akun"]
 license = "MIT"

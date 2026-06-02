@@ -91,3 +91,14 @@ fn browser_crop_insets() -> (u32, u32)
 ```
 
 Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas yang dipotong.
+
+
+## Update 1.0.2 - Compact Action Layout
+
+- Action button dibuat compact dalam grid 3 kolom agar tidak terlalu panjang ke bawah.
+- Tombol Start kini berubah sesuai kondisi:
+  - `Start Flow` saat belum mulai.
+  - `Recording Aktif` saat flow sedang berjalan dan tombol dikunci agar tidak ambigu.
+  - `Start TC Baru` saat flow sudah selesai.
+  - `Resume Flow` saat session lama ditemukan.
+- Ditambahkan kartu `Flow Status` agar user tahu jelas apakah aplikasi masih idle, ready, recording, atau finished.

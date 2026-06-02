@@ -49,3 +49,8 @@ Mac artifact biasanya berisi file `.dmg` dari folder:
 ```text
 src-tauri/target/release/bundle/dmg/
 ```
+
+
+## Catatan versi 1.0.2
+
+Versi ini hanya mengubah UI frontend Tauri: layout tombol dibuat grid compact dan status Start/Recording dibuat eksplisit. Workflow GitHub Actions tetap sama.

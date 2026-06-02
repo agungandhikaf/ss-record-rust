@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use chrono::Local;
-use image::GenericImageView;
 use screenshots::Screen;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -307,12 +306,11 @@ fn normalize_session(mut state: SessionState) -> SessionState {
 #[cfg(target_os = "windows")]
 fn active_window_bounds() -> Option<(i32, i32, i32, i32)> {
   use windows_sys::Win32::Foundation::RECT;
-  use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
   use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect, IsIconic};
 
   unsafe {
     let hwnd = GetForegroundWindow();
-    if hwnd == 0 || IsIconic(hwnd) != 0 {
+    if hwnd.is_null() || IsIconic(hwnd) != 0 {
       return None;
     }
 
@@ -323,16 +321,10 @@ fn active_window_bounds() -> Option<(i32, i32, i32, i32)> {
       bottom: 0,
     };
 
-    // DwmGetWindowAttribute memberi batas visual window yang lebih rapi daripada GetWindowRect
-    // karena tidak memasukkan invisible resize border di Windows modern.
-    let hr = DwmGetWindowAttribute(
-      hwnd,
-      DWMWA_EXTENDED_FRAME_BOUNDS,
-      &mut rect as *mut _ as *mut _,
-      std::mem::size_of::<RECT>() as u32,
-    );
-
-    if hr != 0 && GetWindowRect(hwnd, &mut rect as *mut _) == 0 {
+    // Build fix Windows:
+    // Gunakan GetWindowRect saja agar kompatibel dengan windows-sys di GitHub Actions.
+    // Ini tetap mengambil batas window aktif, sehingga taskbar Windows tidak ikut terscreenshot.
+    if GetWindowRect(hwnd, &mut rect) == 0 {
       return None;
     }
 
@@ -443,7 +435,7 @@ fn start_or_resume_flow(parent_folder: String) -> Result<SessionState, String> {
   fs::create_dir_all(parent).map_err(|e| format!("Gagal membuat parent folder: {e}"))?;
 
   if let Some(state) = read_session_file(parent) {
-    let mut state = normalize_session(state);
+    let state = normalize_session(state);
     if state.status == "recording" && !state.current_tc_name.is_empty() {
       save_session(&state)?;
       return Ok(state);
