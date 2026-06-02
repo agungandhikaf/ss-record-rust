@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "flow-screenshot-recorder-tauri"
-version = "1.0.1"
+version = "1.0.3"
 dependencies = [
  "chrono",
  "image 0.24.9",

@@ -1,4 +1,4 @@
-# Build Tauri Installer via GitHub Actions
+# Build dan Release Tauri Installer via GitHub Actions
 
 Pastikan repo berisi folder:
 
@@ -8,49 +8,81 @@ src-tauri/
 
 Kalau tidak ada folder `src-tauri`, berarti itu bukan project Tauri.
 
-## Langkah
+## Build biasa untuk testing
 
-1. Upload source project ini ke GitHub.
-2. Jangan upload folder besar berikut:
-
-```text
-node_modules/
-dist/
-src-tauri/target/
-```
-
-3. Pastikan file ini ada:
-
-```text
-.github/workflows/build-installers.yml
-```
-
-4. Buka tab GitHub `Actions`.
-5. Pilih `Build Tauri Installers`.
-6. Klik `Run workflow`.
-7. Tunggu sampai success.
-8. Download artifact:
+1. Push perubahan ke branch `main`.
+2. Buka tab GitHub `Actions`.
+3. Pilih `Build Tauri Installers`.
+4. Tunggu sampai success.
+5. Download artifact:
 
 ```text
 tauri-windows-installer
 tauri-mac-installer
 ```
 
-## Output
+Artifact ini cocok untuk testing developer.
 
-Windows artifact biasanya berisi file `.exe` dari folder:
+## Release resmi untuk user
 
-```text
-src-tauri/target/release/bundle/nsis/
+Untuk membuat release yang bisa didownload user dari menu **Check Update**, buat dan push tag versi.
+
+Contoh release `v1.0.5`:
+
+```bash
+git add .
+git commit -m "release: v1.0.5"
+git push origin main
+
+git tag v1.0.5
+git push origin v1.0.5
 ```
 
-Mac artifact biasanya berisi file `.dmg` dari folder:
+Saat tag `v1.0.5` dipush, GitHub Actions akan:
 
 ```text
-src-tauri/target/release/bundle/dmg/
+1. Build Windows installer
+2. Build Mac installer
+3. Upload artifact untuk developer
+4. Publish installer ke GitHub Releases
 ```
 
+Asset release dibuat dengan nama stabil:
 
-## Catatan versi 1.0.2
+```text
+Flow_Screenshot_Recorder_windows_x64_setup.exe
+Flow_Screenshot_Recorder_mac.dmg
+```
 
-Versi ini hanya mengubah UI frontend Tauri: layout tombol dibuat grid compact dan status Start/Recording dibuat eksplisit. Workflow GitHub Actions tetap sama.
+Nama stabil ini penting supaya tombol **Download Update** di aplikasi bisa mengambil installer terbaru dari GitHub Releases.
+
+## Hal yang wajib dicek sebelum release
+
+Pastikan version sama di dua file:
+
+```text
+package.json
+src-tauri/tauri.conf.json
+```
+
+Contoh:
+
+```json
+"version": "1.0.5"
+```
+
+Tag harus mengikuti version:
+
+```text
+v1.0.5
+```
+
+## Link user
+
+User bisa download dari:
+
+```text
+https://github.com/agungandhikaf/ss-record-rust/releases/latest
+```
+
+Atau lewat tombol **Check Update** di aplikasi.

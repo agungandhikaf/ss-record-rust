@@ -540,3 +540,47 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+.update-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.version-pill {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #1e40af;
+  background: #dbeafe;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.update-status-text {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.update-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.update-actions button {
+  min-height: 48px;
+  padding: 12px 14px;
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .update-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .version-pill {
+    justify-self: flex-start;
+  }
+}

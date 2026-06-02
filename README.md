@@ -102,3 +102,23 @@ Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas y
   - `Start TC Baru` saat flow sudah selesai.
   - `Resume Flow` saat session lama ditemukan.
 - Ditambahkan kartu `Flow Status` agar user tahu jelas apakah aplikasi masih idle, ready, recording, atau finished.
+## Catatan Browse Folder
+
+Tombol **Browse** memakai dialog folder dari API frontend Tauri, bukan command blocking Rust. Ini dibuat supaya aplikasi tidak terasa freeze/lag saat native folder picker dibuka, terutama di Windows dan macOS tertentu.
+
+
+## Update 1.0.5 - Check Update via GitHub Releases
+
+- Ditambahkan section **Aplikasi & Update** di dalam aplikasi.
+- Aplikasi menampilkan versi dari konfigurasi Tauri.
+- Tombol **Check Update** akan mengecek release terbaru dari repo public GitHub:
+
+```text
+https://github.com/agungandhikaf/ss-record-rust/releases/latest
+```
+
+- Jika versi terbaru tersedia, tombol **Download Update** akan muncul dan membuka installer terbaru sesuai OS:
+  - Windows: `Flow_Screenshot_Recorder_windows_x64_setup.exe`
+  - Mac: `Flow_Screenshot_Recorder_mac.dmg`
+
+Catatan: fitur ini tidak auto-install. User tetap perlu menutup aplikasi, menjalankan installer baru, lalu membuka aplikasi kembali.

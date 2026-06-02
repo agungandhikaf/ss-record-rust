@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
+import { open as openDialog } from '@tauri-apps/api/dialog';
+import { getVersion } from '@tauri-apps/api/app';
+import { open as openExternal } from '@tauri-apps/api/shell';
 
 const elements = {
   statusBadge: document.querySelector('#statusBadge'),
@@ -26,10 +29,19 @@ const elements = {
   shortcutWarning: document.querySelector('#shortcutWarning'),
   lastCapturePanel: document.querySelector('#lastCapturePanel'),
   lastCaptureText: document.querySelector('#lastCaptureText'),
+  appVersion: document.querySelector('#appVersion'),
+  updateStatusText: document.querySelector('#updateStatusText'),
+  checkUpdateBtn: document.querySelector('#checkUpdateBtn'),
+  downloadUpdateBtn: document.querySelector('#downloadUpdateBtn'),
+  openReleaseBtn: document.querySelector('#openReleaseBtn'),
   toast: document.querySelector('#toast')
 };
 
 const isMac = navigator.platform.toLowerCase().includes('mac');
+const GITHUB_REPO = 'agungandhikaf/ss-record-rust';
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
+const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+
 
 let state = {
   parentFolder: '',
@@ -45,10 +57,20 @@ let state = {
     pending: isMac ? '⌘ + Shift + P' : 'Ctrl + Shift + P',
     finish: isMac ? '⌘ + Shift + F' : 'Ctrl + Shift + F'
   },
-  shortcutStatus: []
+  shortcutStatus: [],
+  appVersion: '-',
+  updateInfo: {
+    checking: false,
+    hasUpdate: false,
+    latestVersion: '',
+    downloadUrl: '',
+    releaseUrl: GITHUB_RELEASES_URL,
+    message: 'Klik Check Update untuk mengecek versi terbaru dari GitHub Releases.'
+  }
 };
 
 let busy = false;
+let folderPickerBusy = false;
 let toastTimer;
 
 function showToast(message, type = 'info') {
@@ -81,6 +103,9 @@ function allButtons() {
     elements.refreshTcListBtn,
     elements.openParentBtn,
     elements.openTcBtn,
+    elements.checkUpdateBtn,
+    elements.downloadUpdateBtn,
+    elements.openReleaseBtn,
     ...elements.tcList.querySelectorAll('button')
   ].filter(Boolean);
 }
@@ -90,6 +115,41 @@ function setBusy(isBusy) {
   allButtons().forEach((button) => {
     button.disabled = isBusy;
   });
+}
+
+
+function normalizeVersion(version) {
+  return String(version || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split('-')[0];
+}
+
+function compareVersions(a, b) {
+  const left = normalizeVersion(a).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const right = normalizeVersion(b).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(left.length, right.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
+function getPlatformAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const platformMatchers = isMac
+    ? [/mac.*\.dmg$/i, /\.dmg$/i]
+    : [/windows.*setup.*\.exe$/i, /win.*setup.*\.exe$/i, /x64.*setup.*\.exe$/i, /\.exe$/i];
+
+  for (const matcher of platformMatchers) {
+    const asset = assets.find((item) => matcher.test(item.name || ''));
+    if (asset?.browser_download_url) return asset.browser_download_url;
+  }
+
+  return release?.html_url || GITHUB_RELEASES_URL;
 }
 
 function statusLabel(status) {
@@ -233,6 +293,18 @@ function render() {
     elements.lastCapturePanel.classList.add('hidden');
   }
 
+  elements.appVersion.textContent = state.appVersion || '-';
+
+  if (state.updateInfo?.checking) {
+    elements.updateStatusText.textContent = 'Sedang mengecek GitHub Releases...';
+  } else {
+    elements.updateStatusText.textContent = state.updateInfo?.message || 'Klik Check Update untuk mengecek versi terbaru.';
+  }
+
+  const hasDownloadUrl = Boolean(state.updateInfo?.downloadUrl);
+  elements.downloadUpdateBtn.classList.toggle('hidden', !hasDownloadUrl || !state.updateInfo?.hasUpdate);
+  elements.openReleaseBtn.classList.toggle('hidden', !state.updateInfo?.releaseUrl);
+
   renderTcList();
 
   if (!busy) {
@@ -246,6 +318,9 @@ function render() {
     elements.refreshTcListBtn.disabled = !hasParent;
     elements.openParentBtn.disabled = !hasParent;
     elements.openTcBtn.disabled = !state.currentTcFolder;
+    elements.checkUpdateBtn.disabled = Boolean(state.updateInfo?.checking);
+    elements.downloadUpdateBtn.disabled = !state.updateInfo?.downloadUrl;
+    elements.openReleaseBtn.disabled = !state.updateInfo?.releaseUrl;
   }
 }
 
@@ -268,14 +343,41 @@ async function runAction(action, successMessage) {
 }
 
 async function chooseFolder() {
-  const folder = await invoke('choose_parent_folder');
-  if (!folder) return;
+  // Browser folder picker dibuat khusus tanpa runAction/setBusy global.
+  // Di beberapa mesin, dialog folder native Tauri bisa terasa freeze kalau seluruh UI dikunci.
+  // Dengan cara ini hanya tombol Browse yang dikunci, sementara app tetap responsif.
+  if (folderPickerBusy) return;
 
-  state.parentFolder = folder;
-  const restored = await invoke('read_session', { parentFolder: folder });
-  state = { ...state, ...restored };
-  showToast('Parent folder dipilih.');
-  render();
+  folderPickerBusy = true;
+  elements.chooseFolderBtn.disabled = true;
+  elements.chooseFolderBtn.textContent = 'Membuka Folder Picker...';
+
+  try {
+    const selected = await openDialog({
+      title: 'Pilih Parent Folder',
+      directory: true,
+      multiple: false
+    });
+
+    if (!selected) return;
+
+    const folder = Array.isArray(selected) ? selected[0] : selected;
+    if (!folder) return;
+
+    state.parentFolder = folder;
+    const restored = await invoke('read_session', { parentFolder: folder });
+    state = { ...state, ...restored };
+    showToast('Parent folder dipilih.');
+  } catch (error) {
+    const message = typeof error === 'string' ? error : error?.message || 'Gagal membuka folder picker.';
+    showToast(message, 'error');
+    await notifyUser('Flow Screenshot Recorder', message);
+  } finally {
+    folderPickerBusy = false;
+    elements.chooseFolderBtn.disabled = false;
+    elements.chooseFolderBtn.textContent = 'Browse';
+    render();
+  }
 }
 
 async function refreshSession() {
@@ -376,8 +478,87 @@ async function finishFlow() {
   render();
 }
 
+
+async function checkForUpdate() {
+  if (state.updateInfo?.checking) return;
+
+  state = {
+    ...state,
+    updateInfo: {
+      ...(state.updateInfo || {}),
+      checking: true,
+      message: 'Sedang mengecek GitHub Releases...'
+    }
+  };
+  render();
+
+  try {
+    const response = await fetch(GITHUB_RELEASES_API, {
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+
+    if (response.status === 404) {
+      throw new Error('Belum ada GitHub Release. Buat release/tag dulu, lalu coba Check Update lagi.');
+    }
+
+    if (!response.ok) {
+      throw new Error(`Gagal cek update dari GitHub. HTTP ${response.status}`);
+    }
+
+    const release = await response.json();
+    const latestVersion = normalizeVersion(release.tag_name || release.name || '');
+    const currentVersion = normalizeVersion(state.appVersion);
+    const hasUpdate = latestVersion && compareVersions(latestVersion, currentVersion) > 0;
+    const downloadUrl = hasUpdate ? getPlatformAsset(release) : '';
+    const releaseUrl = release.html_url || GITHUB_RELEASES_URL;
+
+    state = {
+      ...state,
+      updateInfo: {
+        checking: false,
+        hasUpdate,
+        latestVersion,
+        downloadUrl,
+        releaseUrl,
+        message: hasUpdate
+          ? `Versi terbaru tersedia: ${latestVersion}. Current version: ${currentVersion}. Klik Download Update untuk mengambil installer terbaru.`
+          : `Versi aplikasi sudah terbaru. Current version: ${currentVersion}${latestVersion ? `, latest release: ${latestVersion}` : ''}.`
+      }
+    };
+
+    showToast(hasUpdate ? `Update tersedia: ${latestVersion}` : 'Aplikasi sudah versi terbaru.');
+  } catch (error) {
+    const message = typeof error === 'string' ? error : error?.message || 'Gagal cek update.';
+    state = {
+      ...state,
+      updateInfo: {
+        ...(state.updateInfo || {}),
+        checking: false,
+        hasUpdate: false,
+        downloadUrl: '',
+        releaseUrl: GITHUB_RELEASES_URL,
+        message
+      }
+    };
+    showToast(message, 'error');
+  } finally {
+    render();
+  }
+}
+
+async function downloadUpdate() {
+  const url = state.updateInfo?.downloadUrl || state.updateInfo?.releaseUrl || GITHUB_RELEASES_URL;
+  await openExternal(url);
+  showToast('Halaman/download update dibuka. Tutup aplikasi sebelum install versi baru.');
+}
+
+async function openLatestRelease() {
+  await openExternal(state.updateInfo?.releaseUrl || GITHUB_RELEASES_URL);
+}
+
 function registerButtonHandlers() {
-  elements.chooseFolderBtn.addEventListener('click', () => runAction(chooseFolder));
+  elements.chooseFolderBtn.addEventListener('click', chooseFolder);
   elements.startBtn.addEventListener('click', () => runAction(startFlow));
 
   // Capture dari tombol akan hide window sebentar supaya UI aplikasi tidak ikut masuk screenshot.
@@ -389,6 +570,9 @@ function registerButtonHandlers() {
   elements.refreshTcListBtn.addEventListener('click', () => runAction(refreshSession));
   elements.openParentBtn.addEventListener('click', () => runAction(() => invoke('open_path', { path: state.parentFolder })));
   elements.openTcBtn.addEventListener('click', () => runAction(() => invoke('open_path', { path: state.currentTcFolder })));
+  elements.checkUpdateBtn.addEventListener('click', checkForUpdate);
+  elements.downloadUpdateBtn.addEventListener('click', () => runAction(downloadUpdate));
+  elements.openReleaseBtn.addEventListener('click', () => runAction(openLatestRelease));
 
   elements.tcList.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-tc-name]');
@@ -412,6 +596,17 @@ async function registerShortcutListeners() {
   }
 }
 
-registerButtonHandlers();
-registerShortcutListeners();
-render();
+async function initApp() {
+  registerButtonHandlers();
+  registerShortcutListeners();
+
+  try {
+    state.appVersion = await getVersion();
+  } catch (_) {
+    state.appVersion = '-';
+  }
+
+  render();
+}
+
+initApp();

@@ -83,6 +83,23 @@
         <p id="lastCaptureText">-</p>
       </section>
 
+      <section class="panel update-panel">
+        <div class="panel-title-row">
+          <div>
+            <h2>Aplikasi & Update</h2>
+            <p>Gunakan GitHub Releases untuk mengecek dan download installer terbaru.</p>
+          </div>
+          <span class="version-pill">Version: <strong id="appVersion">-</strong></span>
+        </div>
+        <p id="updateStatusText" class="update-status-text">Klik Check Update untuk mengecek versi terbaru dari GitHub Releases.</p>
+        <div class="update-actions">
+          <button id="checkUpdateBtn" class="secondary-btn">Check Update</button>
+          <button id="downloadUpdateBtn" class="primary-btn hidden">Download Update</button>
+          <button id="openReleaseBtn" class="ghost-btn hidden">Open Releases</button>
+        </div>
+        <p class="small-note">Jika update tersedia, aplikasi akan membuka installer terbaru dari GitHub. Tutup aplikasi dulu sebelum menjalankan installer baru.</p>
+      </section>
+
       <section class="panel info-panel">
         <h2>Konsep Flow</h2>
         <p><strong>Next TC</strong> menandai TC aktif sebagai Done dan pindah ke TC baru. <strong>Mark Pending</strong> menandai TC aktif sebagai Pending, lalu lanjut ke TC baru. Untuk melanjutkan TC lama, klik <strong>Resume</strong> pada TC List.</p>
