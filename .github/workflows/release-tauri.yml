@@ -37,16 +37,28 @@ jobs:
         run: npm run dist:win
 
       - name: Rename Windows installer
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path release-assets
-          $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
-          Copy-Item $exe.FullName "release-assets/Flow_Screenshot_Recorder_windows_x64_setup.exe"
+          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.8 -> v.1.0.8.
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ -z "${GITHUB_REF_NAME:-}" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+
+          mkdir -p release-assets
+          shopt -s nullglob
+          files=(src-tauri/target/release/bundle/nsis/*.exe)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No Windows NSIS .exe installer found."
+            exit 1
+          fi
+          cp "${files[0]}" "release-assets/MyScreenshots_x64_v.${VERSION}.exe"
+          ls -la release-assets
 
       - name: Upload Windows installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/Flow_Screenshot_Recorder_windows_x64_setup.exe
+          files: release-assets/*
 
   build-mac:
     name: Build Mac DMG
@@ -77,10 +89,23 @@ jobs:
 
       - name: Rename Mac installer
         run: |
+          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.8 -> v.1.0.8.
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "${GITHUB_REF_NAME:-}" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+
           mkdir -p release-assets
-          cp src-tauri/target/release/bundle/dmg/*.dmg release-assets/Flow_Screenshot_Recorder_mac.dmg
+          shopt -s nullglob
+          files=(src-tauri/target/release/bundle/dmg/*.dmg)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No macOS .dmg installer found."
+            exit 1
+          fi
+          cp "${files[0]}" "release-assets/MyScreenshots_mac_v.${VERSION}.dmg"
+          ls -la release-assets
 
       - name: Upload Mac installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/Flow_Screenshot_Recorder_mac.dmg
+          files: release-assets/*
