@@ -1,6 +1,6 @@
 {
   "name": "myscreenshots-tauri",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "Manual screenshot recorder per TC folder using Tauri + Rust.",
   "type": "module",
@@ -9,8 +9,8 @@
     "build": "tauri build",
     "build:vite": "vite build",
     "dev:vite": "vite --host 127.0.0.1",
-    "dist:win": "tauri build --bundles nsis",
-    "dist:mac": "tauri build --bundles dmg"
+    "dist:win": "tauri build --bundles nsis && node scripts/rename-tauri-installer.mjs win",
+    "dist:mac": "tauri build --bundles dmg && node scripts/rename-tauri-installer.mjs mac"
   },
   "dependencies": {
     "@tauri-apps/api": "^1.6.0"

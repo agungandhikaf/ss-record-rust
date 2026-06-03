@@ -32,6 +32,7 @@ echo "Membuat .dmg..."
 npm run dist:mac || { echo "[ERROR] Build gagal."; read -r -p "Tekan Enter..."; exit 1; }
 
 echo
-echo "Build selesai. Cek folder: src-tauri/target/release/bundle/dmg"
-open "src-tauri/target/release/bundle/dmg" 2>/dev/null || true
+# [VERSIONED_INSTALLER_FIX]
+echo "Build selesai. Installer final ada di folder: dist-installers"
+open "dist-installers" 2>/dev/null || true
 read -r -p "Tekan Enter untuk keluar..."

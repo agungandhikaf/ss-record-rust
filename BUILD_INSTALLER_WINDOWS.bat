@@ -45,6 +45,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo Build selesai. Cek folder: src-tauri\target\release\bundle\nsis
-start "" "%CD%\src-tauri\target\release\bundle\nsis"
+REM [VERSIONED_INSTALLER_FIX]
+echo Build selesai. Installer final ada di folder: dist-installers
+start "" "%CD%\dist-installers"
 pause
