@@ -7,8 +7,8 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Flow Screenshot Recorder",
-    "version": "1.0.6"
+    "productName": "MyScreenshots",
+    "version": "1.0.7"
   },
   "tauri": {
     "allowlist": {
@@ -18,7 +18,7 @@
       "active": true,
       "category": "Productivity",
       "copyright": "Internal tool",
-      "identifier": "com.temanakun.flow-screenshot-recorder",
+      "identifier": "com.temanakun.myscreenshots",
       "targets": "all",
       "shortDescription": "Manual screenshot recorder per TC folder",
       "longDescription": "Aplikasi desktop ringan berbasis Tauri + Rust untuk screenshot manual per folder TC001, TC002, dan seterusnya.",
@@ -35,7 +35,7 @@
     },
     "windows": [
       {
-        "title": "Flow Screenshot Recorder",
+        "title": "MyScreenshots",
         "width": 980,
         "height": 860,
         "minWidth": 680,

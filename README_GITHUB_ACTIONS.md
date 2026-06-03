@@ -50,11 +50,11 @@ Saat tag `v1.0.5` dipush, GitHub Actions akan:
 Asset release dibuat dengan nama stabil:
 
 ```text
-Flow_Screenshot_Recorder_windows_x64_setup.exe
-Flow_Screenshot_Recorder_mac.dmg
+MyScreenshots_v<VERSION>_windows_x64_setup.exe
+MyScreenshots_v<VERSION>_mac.dmg
 ```
 
-Nama stabil ini penting supaya tombol **Download Update** di aplikasi bisa mengambil installer terbaru dari GitHub Releases.
+Nama file sekarang menyertakan versi supaya user tahu file installer yang didownload. Tombol **Download Update** tetap aman karena aplikasi membaca asset dari GitHub Releases API, bukan mengandalkan nama file statis.
 
 ## Hal yang wajib dicek sebelum release
 
@@ -87,7 +87,25 @@ https://github.com/agungandhikaf/ss-record-rust/releases/latest
 
 Atau lewat tombol **Check Update** di aplikasi.
 
-## Catatan v1.0.6
+## Catatan v1.0.7
 
 Jika user melaporkan session tidak terbaca setelah update, pastikan mereka pernah memilih parent folder minimal satu kali pada versi terbaru. Setelah itu aplikasi akan menyimpan parent folder terakhir dan auto-restore session pada pembukaan berikutnya.
 
+
+## Catatan v1.0.7 - Rename dan versioned release asset
+
+Aplikasi sekarang bernama **MyScreenshots**. Workflow release akan menyalin installer menjadi nama dengan format:
+
+```text
+MyScreenshots_v<version>_windows_x64_setup.exe
+MyScreenshots_v<version>_mac.dmg
+```
+
+Contoh untuk versi `1.0.7`:
+
+```text
+MyScreenshots_v1.0.7_windows_x64_setup.exe
+MyScreenshots_v1.0.7_mac.dmg
+```
+
+Karena `productName` dan `identifier` berubah, installer dapat muncul sebagai aplikasi baru. Untuk migrasi dari versi lama, sarankan user uninstall **Flow Screenshot Recorder** setelah **MyScreenshots** berhasil terinstall.

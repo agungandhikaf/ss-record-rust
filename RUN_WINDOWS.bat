@@ -1,10 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Flow Screenshot Recorder - Tauri
+title MyScreenshots - Tauri
 
 echo ============================================
-echo Flow Screenshot Recorder - Tauri
+echo MyScreenshots - Tauri
 echo ============================================
 echo.
 

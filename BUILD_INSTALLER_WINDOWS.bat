@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Build Flow Screenshot Recorder - Windows Tauri
+title Build MyScreenshots - Windows Tauri
 
 echo ============================================
 echo Build Installer Windows - Tauri

@@ -3,7 +3,7 @@ cd "$(dirname "$0")" || exit 1
 clear
 
 echo "============================================"
-echo "Flow Screenshot Recorder - Tauri"
+echo "MyScreenshots - Tauri"
 echo "============================================"
 echo
 

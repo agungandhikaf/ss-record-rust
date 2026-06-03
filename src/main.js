@@ -359,7 +359,7 @@ async function runAction(action, successMessage) {
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Terjadi error.';
     showToast(message, 'error');
-    await notifyUser('Flow Screenshot Recorder', message);
+    await notifyUser('MyScreenshots', message);
     return null;
   } finally {
     setBusy(false);
@@ -397,7 +397,7 @@ async function chooseFolder() {
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Gagal membuka folder picker.';
     showToast(message, 'error');
-    await notifyUser('Flow Screenshot Recorder', message);
+    await notifyUser('MyScreenshots', message);
   } finally {
     folderPickerBusy = false;
     elements.chooseFolderBtn.disabled = false;

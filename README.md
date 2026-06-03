@@ -1,4 +1,4 @@
-# Flow Screenshot Recorder — Tauri + Rust
+# MyScreenshots — Tauri + Rust
 
 Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 
@@ -118,14 +118,29 @@ https://github.com/agungandhikaf/ss-record-rust/releases/latest
 ```
 
 - Jika versi terbaru tersedia, tombol **Download Update** akan muncul dan membuka installer terbaru sesuai OS:
-  - Windows: `Flow_Screenshot_Recorder_windows_x64_setup.exe`
-  - Mac: `Flow_Screenshot_Recorder_mac.dmg`
+  - Windows: `MyScreenshots_v1.0.7_windows_x64_setup.exe`
+  - Mac: `MyScreenshots_v1.0.7_mac.dmg`
 
 Catatan: fitur ini tidak auto-install. User tetap perlu menutup aplikasi, menjalankan installer baru, lalu membuka aplikasi kembali.
 
-## Update v1.0.6
+## Update v1.0.7
 
 - Bugfix session setelah aplikasi di-update: aplikasi menyimpan parent folder terakhir di app config dan otomatis membaca `session.json` dari folder tersebut saat dibuka lagi.
 - Bugfix kompatibilitas session lama: aplikasi mencoba membaca beberapa key lama seperti `currentTC`/`currentTc` agar session dari versi sebelumnya tidak hilang.
 - Penyesuaian crop macOS: crop bagian atas dinaikkan agar tab Chrome tidak ikut dan hasil lebih dekat ke area address/search bar.
 
+
+## Update v1.0.7 - Rename aplikasi dan nama file release
+
+- Nama aplikasi diubah dari **Flow Screenshot Recorder** menjadi **MyScreenshots**.
+- Product name, title window, notifikasi, package name, dan bundle identifier sudah disesuaikan ke MyScreenshots.
+- File installer di GitHub Actions/GitHub Releases sekarang diberi versi agar user tahu versi yang sedang didownload.
+
+Contoh asset release:
+
+```text
+MyScreenshots_v1.0.7_windows_x64_setup.exe
+MyScreenshots_v1.0.7_mac.dmg
+```
+
+Catatan migrasi: karena nama aplikasi dan identifier berubah, Windows/macOS bisa menganggap **MyScreenshots** sebagai aplikasi baru. Jika masih ada aplikasi lama **Flow Screenshot Recorder**, uninstall/hapus aplikasi lama satu kali agar user tidak bingung. Data screenshot di parent folder tetap aman.
