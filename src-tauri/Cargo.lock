@@ -1091,22 +1091,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flow-screenshot-recorder-tauri"
-version = "1.0.4"
-dependencies = [
- "chrono",
- "image 0.24.9",
- "open 5.3.5",
- "screenshots",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "uuid",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "fluent-uri"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2429,6 +2413,22 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
+]
+
+[[package]]
+name = "myscreenshots-tauri"
+version = "1.0.7"
+dependencies = [
+ "chrono",
+ "image 0.24.9",
+ "open 5.3.5",
+ "screenshots",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/api/dialog';
 import { getVersion } from '@tauri-apps/api/app';
 import { open as openExternal } from '@tauri-apps/api/shell';
+import { fetch as tauriFetch, ResponseType } from '@tauri-apps/api/http';
 
 const elements = {
   statusBadge: document.querySelector('#statusBadge'),
@@ -41,6 +42,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 const GITHUB_REPO = 'agungandhikaf/ss-record-rust';
 const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const UPDATE_CHECK_TIMEOUT_MS = 15000;
 
 
 let state = {
@@ -175,6 +177,117 @@ function getPlatformAsset(release) {
   }
 
   return release?.html_url || GITHUB_RELEASES_URL;
+}
+
+
+function getHeaderValue(headers, headerName) {
+  if (!headers || !headerName) return '';
+
+  if (typeof headers.get === 'function') {
+    return headers.get(headerName) || '';
+  }
+
+  const targetHeader = headerName.toLowerCase();
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === targetHeader);
+  if (!match) return '';
+
+  const value = match[1];
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
+}
+
+function formatRateLimitReset(headers) {
+  const resetUnix = Number.parseInt(getHeaderValue(headers, 'x-ratelimit-reset'), 10);
+  if (!Number.isFinite(resetUnix) || resetUnix <= 0) return '';
+
+  const resetDate = new Date(resetUnix * 1000);
+  return resetDate.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function getGitHubApiErrorMessage(response) {
+  const status = response?.status;
+  const headers = response?.headers;
+  const apiMessage = typeof response?.data?.message === 'string' ? response.data.message : '';
+
+  if (status === 404) {
+    return 'Belum ada GitHub Release. Buat release/tag dulu, lalu coba Check Update lagi.';
+  }
+
+  if (status === 403) {
+    const remaining = getHeaderValue(headers, 'x-ratelimit-remaining');
+    const resetTime = formatRateLimitReset(headers);
+    const isRateLimited = remaining === '0' || /rate limit/i.test(apiMessage);
+
+    if (isRateLimited) {
+      return `GitHub API sedang kena rate limit${resetTime ? ` sampai sekitar ${resetTime}` : ''}. Link Releases tetap bisa dibuka manual lewat tombol Open Releases.`;
+    }
+
+    return `GitHub API menolak request update checker (HTTP 403)${apiMessage ? `: ${apiMessage}` : ''}. Link Releases tetap bisa dibuka manual lewat tombol Open Releases.`;
+  }
+
+  return `Gagal cek update dari GitHub API. HTTP ${status || '-'}`;
+}
+
+async function fetchLatestReleaseWithTauriHttp() {
+  // [GITHUB_UPDATE_403_FIX]
+  // Pakai Tauri HTTP client agar request update punya User-Agent resmi dan tidak bergantung pada browser fetch/CORS.
+  const response = await tauriFetch(GITHUB_RELEASES_API, {
+    method: 'GET',
+    timeout: UPDATE_CHECK_TIMEOUT_MS,
+    responseType: ResponseType.JSON,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': `MyScreenshots/${state.appVersion || 'unknown'} update-checker`
+    }
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: response.data,
+    headers: response.headers || response.rawHeaders || {}
+  };
+}
+
+async function fetchLatestReleaseWithBrowserFetch() {
+  // [GITHUB_UPDATE_403_FIX]
+  // Fallback untuk mode dev/browser biasa. Header User-Agent tidak bisa diset dari browser fetch.
+  const response = await window.fetch(GITHUB_RELEASES_API, {
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    headers: response.headers
+  };
+}
+
+async function fetchLatestRelease() {
+  try {
+    return await fetchLatestReleaseWithTauriHttp();
+  } catch (tauriError) {
+    console.warn('[GITHUB_UPDATE_403_FIX] Tauri HTTP update check failed, fallback to browser fetch:', tauriError);
+    return fetchLatestReleaseWithBrowserFetch();
+  }
 }
 
 function statusLabel(status) {
@@ -520,20 +633,16 @@ async function checkForUpdate() {
   render();
 
   try {
-    const response = await fetch(GITHUB_RELEASES_API, {
-      cache: 'no-store',
-      headers: { Accept: 'application/vnd.github+json' }
-    });
-
-    if (response.status === 404) {
-      throw new Error('Belum ada GitHub Release. Buat release/tag dulu, lalu coba Check Update lagi.');
-    }
+    const response = await fetchLatestRelease();
 
     if (!response.ok) {
-      throw new Error(`Gagal cek update dari GitHub. HTTP ${response.status}`);
+      throw new Error(getGitHubApiErrorMessage(response));
     }
 
-    const release = await response.json();
+    const release = response.data;
+    if (!release || typeof release !== 'object') {
+      throw new Error('Response GitHub Releases tidak valid. Klik Open Releases untuk cek manual.');
+    }
     const latestVersion = normalizeVersion(release.tag_name || release.name || '');
     const currentVersion = normalizeVersion(state.appVersion);
     const hasUpdate = latestVersion && compareVersions(latestVersion, currentVersion) > 0;
@@ -557,6 +666,7 @@ async function checkForUpdate() {
     showToast(hasUpdate ? `Update tersedia: ${latestVersion}` : 'Aplikasi sudah versi terbaru.');
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Gagal cek update.';
+    const manualCheckMessage = `${message} Screenshot recorder tetap aman dipakai.`;
     state = {
       ...state,
       updateInfo: {
@@ -565,10 +675,10 @@ async function checkForUpdate() {
         hasUpdate: false,
         downloadUrl: '',
         releaseUrl: GITHUB_RELEASES_URL,
-        message
+        message: manualCheckMessage
       }
     };
-    showToast(message, 'error');
+    showToast('Check update otomatis gagal. Klik Open Releases untuk cek manual.');
   } finally {
     render();
   }
