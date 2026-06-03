@@ -86,3 +86,8 @@ https://github.com/agungandhikaf/ss-record-rust/releases/latest
 ```
 
 Atau lewat tombol **Check Update** di aplikasi.
+
+## Catatan v1.0.6
+
+Jika user melaporkan session tidak terbaca setelah update, pastikan mereka pernah memilih parent folder minimal satu kali pada versi terbaru. Setelah itu aplikasi akan menyimpan parent folder terakhir dan auto-restore session pada pembukaan berikutnya.
+

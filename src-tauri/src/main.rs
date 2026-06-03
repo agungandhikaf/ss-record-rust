@@ -10,7 +10,7 @@ use std::{
   thread,
   time::Duration,
 };
-use tauri::{api::dialog::blocking::FileDialogBuilder, GlobalShortcutManager, Manager};
+use tauri::{GlobalShortcutManager, Manager};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize)]
@@ -22,6 +22,12 @@ struct ShortcutStatus {
 }
 
 struct ShortcutRegistry(Mutex<Vec<ShortcutStatus>>);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppConfig {
+  last_parent_folder: String,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,10 +110,82 @@ fn metadata_path(parent: &Path, tc_name: &str) -> PathBuf {
   parent.join(tc_name).join("metadata.json")
 }
 
+fn value_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+  for key in keys {
+    if let Some(text) = value.get(*key).and_then(|item| item.as_str()) {
+      if !text.trim().is_empty() {
+        return Some(text.to_string());
+      }
+    }
+  }
+  None
+}
+
+fn value_u32(value: &serde_json::Value, keys: &[&str]) -> Option<u32> {
+  for key in keys {
+    if let Some(number) = value.get(*key).and_then(|item| item.as_u64()) {
+      return Some(number as u32);
+    }
+  }
+  None
+}
+
 fn read_session_file(parent: &Path) -> Option<SessionState> {
   let path = session_path(parent);
   let content = fs::read_to_string(path).ok()?;
-  serde_json::from_str::<SessionState>(&content).ok()
+  let value = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+
+  // [SESSION_COMPAT_FIX]
+  // Beberapa versi awal Electron/Tauri sempat memakai key session yang berbeda,
+  // misalnya currentTC/currentTc. Setelah app di-update, session lama tetap harus bisa dibaca.
+  let mut state = serde_json::from_value::<SessionState>(value.clone()).unwrap_or(SessionState {
+    parent_folder: value_string(&value, &["parentFolder", "parent_folder"])
+      .unwrap_or_else(|| parent.to_string_lossy().to_string()),
+    current_tc_name: String::new(),
+    current_tc_folder: String::new(),
+    current_step: 0,
+    status: "idle".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  if state.parent_folder.trim().is_empty() {
+    state.parent_folder = value_string(&value, &["parentFolder", "parent_folder"])
+      .unwrap_or_else(|| parent.to_string_lossy().to_string());
+  }
+
+  if state.current_tc_name.trim().is_empty() {
+    state.current_tc_name = value_string(
+      &value,
+      &["currentTcName", "currentTCName", "currentTC", "currentTc", "current_tc_name"],
+    )
+    .unwrap_or_default();
+  }
+
+  if state.current_tc_folder.trim().is_empty() {
+    state.current_tc_folder = value_string(
+      &value,
+      &["currentTcFolder", "currentTCFolder", "current_tc_folder"],
+    )
+    .unwrap_or_default();
+  }
+
+  if state.current_tc_folder.trim().is_empty() && !state.current_tc_name.trim().is_empty() {
+    state.current_tc_folder = parent.join(&state.current_tc_name).to_string_lossy().to_string();
+  }
+
+  if state.current_step == 0 {
+    state.current_step = value_u32(&value, &["currentStep", "current_step"]).unwrap_or(0);
+  }
+
+  if state.status.trim().is_empty() {
+    state.status = if state.current_tc_name.trim().is_empty() {
+      "idle".to_string()
+    } else {
+      "recording".to_string()
+    };
+  }
+
+  Some(state)
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
@@ -350,7 +428,9 @@ fn browser_crop_insets() -> (u32, u32) {
   if cfg!(target_os = "windows") {
     (48, 0)
   } else if cfg!(target_os = "macos") {
-    (56, 72)
+    // [MAC_BROWSER_TAB_CROP_FIX]
+    // Crop lebih tinggi agar tab strip Chrome tidak ikut. Targetnya hasil mulai dari area address/search bar.
+    (72, 72)
   } else {
     (52, 0)
   }
@@ -403,12 +483,49 @@ fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRec
   )
 }
 
+fn app_config_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+  let dir = app
+    .path_resolver()
+    .app_config_dir()
+    .ok_or_else(|| "Gagal membaca folder config aplikasi.".to_string())?;
+
+  fs::create_dir_all(&dir).map_err(|e| format!("Gagal membuat folder config aplikasi: {e}"))?;
+  Ok(dir.join("app-config.json"))
+}
+
 #[tauri::command]
-fn choose_parent_folder() -> Option<String> {
-  FileDialogBuilder::new()
-    .set_title("Pilih Parent Folder")
-    .pick_folder()
-    .map(|path| path.to_string_lossy().to_string())
+fn save_last_parent_folder(app: tauri::AppHandle, parent_folder: String) -> Result<(), String> {
+  if parent_folder.trim().is_empty() {
+    return Ok(());
+  }
+
+  // [LAST_PARENT_FOLDER_FIX]
+  // Simpan parent folder terakhir di app config agar setelah aplikasi di-update,
+  // user tidak perlu Browse ulang hanya untuk membaca session.json yang sudah ada.
+  let config = AppConfig { last_parent_folder: parent_folder };
+  write_json(&app_config_file(&app)?, &config)
+}
+
+#[tauri::command]
+fn load_last_parent_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+  let path = app_config_file(&app)?;
+  if !path.exists() {
+    return Ok(None);
+  }
+
+  let content = fs::read_to_string(path).map_err(|e| format!("Gagal membaca config aplikasi: {e}"))?;
+  let config = serde_json::from_str::<AppConfig>(&content)
+    .map_err(|e| format!("Gagal membaca format config aplikasi: {e}"))?;
+
+  if config.last_parent_folder.trim().is_empty() {
+    return Ok(None);
+  }
+
+  if Path::new(&config.last_parent_folder).exists() {
+    Ok(Some(config.last_parent_folder))
+  } else {
+    Ok(None)
+  }
 }
 
 #[tauri::command]
@@ -724,7 +841,8 @@ fn main() {
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
-      choose_parent_folder,
+      save_last_parent_folder,
+      load_last_parent_folder,
       read_session,
       start_or_resume_flow,
       next_tc,

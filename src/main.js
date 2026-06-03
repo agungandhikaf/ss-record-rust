@@ -117,6 +117,31 @@ function setBusy(isBusy) {
   });
 }
 
+async function saveLastParentFolder(parentFolder) {
+  if (!parentFolder) return;
+
+  try {
+    // [LAST_PARENT_FOLDER_FIX]
+    // Simpan lokasi parent terakhir supaya setelah aplikasi di-update, session.json lama bisa auto-dibaca.
+    await invoke('save_last_parent_folder', { parentFolder });
+  } catch (_) {
+    // Ini bukan fitur utama. Kalau gagal, user tetap bisa Browse manual.
+  }
+}
+
+async function restoreLastParentFolder() {
+  try {
+    const folder = await invoke('load_last_parent_folder');
+    if (!folder) return false;
+
+    const restored = await invoke('read_session', { parentFolder: folder });
+    state = { ...state, ...restored, parentFolder: folder };
+    showToast(`Session terakhir dibaca: ${state.currentTcName || 'belum ada TC'}`);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 function normalizeVersion(version) {
   return String(version || '')
@@ -365,9 +390,10 @@ async function chooseFolder() {
     if (!folder) return;
 
     state.parentFolder = folder;
+    await saveLastParentFolder(folder);
     const restored = await invoke('read_session', { parentFolder: folder });
     state = { ...state, ...restored };
-    showToast('Parent folder dipilih.');
+    showToast(state.currentTcName ? `Session ditemukan: ${state.currentTcName}` : 'Parent folder dipilih.');
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Gagal membuka folder picker.';
     showToast(message, 'error');
@@ -394,6 +420,7 @@ async function startFlow() {
     return;
   }
 
+  await saveLastParentFolder(state.parentFolder);
   const nextState = await invoke('start_or_resume_flow', { parentFolder: state.parentFolder });
   state = { ...state, ...nextState };
   showToast(`${state.currentTcName} mulai recording.`);
@@ -606,6 +633,7 @@ async function initApp() {
     state.appVersion = '-';
   }
 
+  await restoreLastParentFolder();
   render();
 }
 

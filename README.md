@@ -122,3 +122,10 @@ https://github.com/agungandhikaf/ss-record-rust/releases/latest
   - Mac: `Flow_Screenshot_Recorder_mac.dmg`
 
 Catatan: fitur ini tidak auto-install. User tetap perlu menutup aplikasi, menjalankan installer baru, lalu membuka aplikasi kembali.
+
+## Update v1.0.6
+
+- Bugfix session setelah aplikasi di-update: aplikasi menyimpan parent folder terakhir di app config dan otomatis membaca `session.json` dari folder tersebut saat dibuka lagi.
+- Bugfix kompatibilitas session lama: aplikasi mencoba membaca beberapa key lama seperti `currentTC`/`currentTc` agar session dari versi sebelumnya tidak hilang.
+- Penyesuaian crop macOS: crop bagian atas dinaikkan agar tab Chrome tidak ikut dan hasil lebih dekat ke area address/search bar.
+
