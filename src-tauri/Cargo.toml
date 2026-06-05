@@ -1,7 +1,7 @@
 [package]
-name = "myscreenshots-tauri"
+name = "mytbc-tauri"
 version = "1.0.8"
-description = "Manual screenshot recorder per TC folder using Tauri + Rust"
+description = "Manual screenshot recorder for Tester Budak Corporate using Tauri + Rust"
 authors = ["Teman Akun"]
 license = "MIT"
 edition = "2021"

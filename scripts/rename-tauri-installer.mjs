@@ -4,10 +4,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 // [VERSIONED_INSTALLER_FIX]
-// Tauri membuat nama installer default seperti "MyScreenshots_1.0.8_x64-setup.exe".
+// Tauri membuat nama installer default seperti "MyTBC_1.0.8_x64-setup.exe".
 // Script ini membuat salinan release-friendly sesuai format yang diminta:
-// - MyScreenshots_x64_v.1.0.8.exe
-// - MyScreenshots_mac_v.1.0.8.dmg
+// - MyTBC_x64_v.1.0.8.exe
+// - MyTBC_mac_v.1.0.8.dmg
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const DIST_DIR = path.join(ROOT_DIR, 'dist-installers');
@@ -65,12 +65,12 @@ function copyVersionedInstaller(platform) {
     win: {
       sourceDir: path.join(TARGET_DIR, 'nsis'),
       extension: '.exe',
-      outputName: `MyScreenshots_x64_v.${version}.exe`
+      outputName: `MyTBC_x64_v.${version}.exe`
     },
     mac: {
       sourceDir: path.join(TARGET_DIR, 'dmg'),
       extension: '.dmg',
-      outputName: `MyScreenshots_mac_v.${version}.dmg`
+      outputName: `MyTBC_mac_v.${version}.dmg`
     }
   };
 

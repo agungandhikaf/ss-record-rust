@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Build MyScreenshots - Windows Tauri
+title Build MyTBC - Windows Tauri
 
 echo ============================================
 echo Build Installer Windows - Tauri

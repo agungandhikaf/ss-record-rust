@@ -1,10 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title MyScreenshots - Tauri
+title MyTBC - Tauri
 
 echo ============================================
-echo MyScreenshots - Tauri
+echo MyTBC - Tauri
 echo ============================================
 echo.
 

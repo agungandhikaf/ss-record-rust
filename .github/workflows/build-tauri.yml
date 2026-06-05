@@ -46,13 +46,13 @@ jobs:
             echo "No Windows NSIS .exe installer found."
             exit 1
           fi
-          cp "${files[0]}" "release-assets/MyScreenshots_x64_v.${VERSION}.exe"
+          cp "${files[0]}" "release-assets/MyTBC_x64_v.${VERSION}.exe"
           ls -la release-assets
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-windows-installer
+          name: mytbc-windows-installer
           if-no-files-found: error
           path: release-assets/*
 
@@ -94,12 +94,12 @@ jobs:
             echo "No macOS .dmg installer found."
             exit 1
           fi
-          cp "${files[0]}" "release-assets/MyScreenshots_mac_v.${VERSION}.dmg"
+          cp "${files[0]}" "release-assets/MyTBC_mac_v.${VERSION}.dmg"
           ls -la release-assets
 
       - name: Upload Mac installer
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-mac-installer
+          name: mytbc-mac-installer
           if-no-files-found: error
           path: release-assets/*

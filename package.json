@@ -1,8 +1,8 @@
 {
-  "name": "myscreenshots-tauri",
+  "name": "mytbc-tauri",
   "version": "1.0.8",
   "private": true,
-  "description": "Manual screenshot recorder per TC folder using Tauri + Rust.",
+  "description": "Manual screenshot recorder per TC folder for Tester Budak Corporate using Tauri + Rust.",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",

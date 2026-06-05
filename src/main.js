@@ -168,8 +168,8 @@ function compareVersions(a, b) {
 function getPlatformAsset(release) {
   const assets = Array.isArray(release?.assets) ? release.assets : [];
   const platformMatchers = isMac
-    ? [/mac.*\.dmg$/i, /\.dmg$/i]
-    : [/windows.*setup.*\.exe$/i, /win.*setup.*\.exe$/i, /x64.*setup.*\.exe$/i, /\.exe$/i];
+    ? [/mytbc.*mac.*\.dmg$/i, /mac.*\.dmg$/i, /\.dmg$/i]
+    : [/mytbc.*x64.*\.exe$/i, /mytbc.*windows.*\.exe$/i, /windows.*setup.*\.exe$/i, /win.*setup.*\.exe$/i, /x64.*\.exe$/i, /\.exe$/i];
 
   for (const matcher of platformMatchers) {
     const asset = assets.find((item) => matcher.test(item.name || ''));
@@ -243,7 +243,7 @@ async function fetchLatestReleaseWithTauriHttp() {
     headers: {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': `MyScreenshots/${state.appVersion || 'unknown'} update-checker`
+      'User-Agent': `MyTBC/${state.appVersion || 'unknown'} update-checker`
     }
   });
 
@@ -472,7 +472,7 @@ async function runAction(action, successMessage) {
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Terjadi error.';
     showToast(message, 'error');
-    await notifyUser('MyScreenshots', message);
+    await notifyUser('MyTBC', message);
     return null;
   } finally {
     setBusy(false);
@@ -510,7 +510,7 @@ async function chooseFolder() {
   } catch (error) {
     const message = typeof error === 'string' ? error : error?.message || 'Gagal membuka folder picker.';
     showToast(message, 'error');
-    await notifyUser('MyScreenshots', message);
+    await notifyUser('MyTBC', message);
   } finally {
     folderPickerBusy = false;
     elements.chooseFolderBtn.disabled = false;

@@ -2416,8 +2416,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "myscreenshots-tauri"
-version = "1.0.8"
+name = "mytbc-tauri"
+version = "1.0.7"
 dependencies = [
  "chrono",
  "image 0.24.9",

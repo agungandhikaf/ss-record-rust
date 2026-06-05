@@ -3,7 +3,7 @@ cd "$(dirname "$0")" || exit 1
 clear
 
 echo "============================================"
-echo "MyScreenshots - Tauri"
+echo "MyTBC - Tauri"
 echo "============================================"
 echo
 

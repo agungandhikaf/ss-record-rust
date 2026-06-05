@@ -17,11 +17,11 @@ jobs:
           - name: Windows
             os: windows-latest
             build_command: npm run dist:win
-            artifact_name: flow-screenshot-recorder-windows
+            artifact_name: mytbc-windows
           - name: macOS
             os: macos-latest
             build_command: npm run dist:mac
-            artifact_name: flow-screenshot-recorder-macos
+            artifact_name: mytbc-macos
 
     steps:
       - name: Checkout source
@@ -64,14 +64,14 @@ jobs:
               echo "No Windows NSIS .exe installer found."
               exit 1
             fi
-            cp "${files[0]}" "release-assets/MyScreenshots_x64_v.${VERSION}.exe"
+            cp "${files[0]}" "release-assets/MyTBC_x64_v.${VERSION}.exe"
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             files=(src-tauri/target/release/bundle/dmg/*.dmg)
             if [[ ${#files[@]} -eq 0 ]]; then
               echo "No macOS .dmg installer found."
               exit 1
             fi
-            cp "${files[0]}" "release-assets/MyScreenshots_mac_v.${VERSION}.dmg"
+            cp "${files[0]}" "release-assets/MyTBC_mac_v.${VERSION}.dmg"
           else
             echo "Unsupported runner OS: $RUNNER_OS"
             exit 1

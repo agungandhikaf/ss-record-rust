@@ -7,7 +7,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "MyScreenshots",
+    "productName": "MyTBC",
     "version": "1.0.8"
   },
   "tauri": {
@@ -18,10 +18,10 @@
       "active": true,
       "category": "Productivity",
       "copyright": "Internal tool",
-      "identifier": "com.temanakun.myscreenshots",
+      "identifier": "com.temanakun.mytbc",
       "targets": "all",
-      "shortDescription": "Manual screenshot recorder per TC folder",
-      "longDescription": "Aplikasi desktop ringan berbasis Tauri + Rust untuk screenshot manual per folder TC001, TC002, dan seterusnya.",
+      "shortDescription": "Manual screenshot recorder for Tester Budak Corporate",
+      "longDescription": "MyTBC adalah aplikasi desktop ringan berbasis Tauri + Rust untuk membantu Tester Budak Corporate menyimpan evidence screenshot manual per folder TC001, TC002, dan seterusnya.",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
@@ -35,7 +35,7 @@
     },
     "windows": [
       {
-        "title": "MyScreenshots",
+        "title": "MyTBC",
         "width": 980,
         "height": 860,
         "minWidth": 680,
