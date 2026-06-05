@@ -4,10 +4,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 // [VERSIONED_INSTALLER_FIX]
-// Tauri membuat nama installer default seperti "MyTBC_1.0.8_x64-setup.exe".
+// Tauri membuat nama installer default seperti "MyTBC_1.0.9_x64-setup.exe".
 // Script ini membuat salinan release-friendly sesuai format yang diminta:
-// - MyTBC_x64_v.1.0.8.exe
-// - MyTBC_mac_v.1.0.8.dmg
+// - MyTBC_x64_v.1.0.9.exe
+// - MyTBC_mac_v.1.0.9.dmg
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const DIST_DIR = path.join(ROOT_DIR, 'dist-installers');

@@ -39,7 +39,7 @@ jobs:
       - name: Rename Windows installer
         shell: bash
         run: |
-          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.8 -> v.1.0.8.
+          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.9 -> v.1.0.9.
           VERSION="${GITHUB_REF_NAME#v}"
           if [[ -z "${GITHUB_REF_NAME:-}" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
             VERSION="$(node -p "require('./package.json').version")"
@@ -89,7 +89,7 @@ jobs:
 
       - name: Rename Mac installer
         run: |
-          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.8 -> v.1.0.8.
+          # [VERSIONED_INSTALLER_FILENAME_FIX] Release asset filename follows the pushed tag, for example v1.0.9 -> v.1.0.9.
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "${GITHUB_REF_NAME:-}" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
             VERSION="$(node -p "require('./package.json').version")"
