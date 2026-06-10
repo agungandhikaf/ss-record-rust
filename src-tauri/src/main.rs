@@ -226,6 +226,54 @@ fn count_png_files(folder: &Path) -> u32 {
     .unwrap_or(0)
 }
 
+fn parse_screenshot_step_from_name(name: &str) -> Option<u32> {
+  // [SCREENSHOT_SEQUENCE_DELETE_FIX]
+  // Nomor screenshot harus mengikuti prefix file terbesar, bukan jumlah file.
+  // Contoh: kalau 004 pernah dihapus dan file tersisa 001,002,003,005, capture berikutnya harus 006,
+  // bukan 005 yang membuat prefix ganda. Format utama: 006_YYYYMMDD_HHMMSS_mmm_abcd.png.
+  let stem = name.rsplit_once('.').map(|(left, _)| left).unwrap_or(name);
+  let prefix = stem.split('_').next()?.trim();
+
+  if prefix.is_empty() || !prefix.chars().all(|ch| ch.is_ascii_digit()) {
+    return None;
+  }
+
+  prefix.parse::<u32>().ok().filter(|step| *step > 0)
+}
+
+fn screenshot_sequence_base(folder: &Path) -> u32 {
+  // [SCREENSHOT_SEQUENCE_DELETE_FIX]
+  // Jangan memakai count_png_files() sebagai dasar nomor berikutnya, karena user bisa menghapus screenshot
+  // di tengah/akhir folder. Count bisa mundur dan membuat nomor lama muncul lagi.
+  let max_numbered_step = fs::read_dir(folder)
+    .map(|entries| {
+      entries
+        .flatten()
+        .filter(|entry| {
+          entry
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("png"))
+            .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+          let file_name = entry.file_name();
+          parse_screenshot_step_from_name(&file_name.to_string_lossy())
+        })
+        .max()
+        .unwrap_or(0)
+    })
+    .unwrap_or(0);
+
+  if max_numbered_step > 0 {
+    max_numbered_step
+  } else {
+    // Fallback untuk file PNG lama/manual yang tidak punya prefix 001_, 002_, dst.
+    count_png_files(folder)
+  }
+}
+
 fn parse_tc_number(name: &str) -> Option<u32> {
   let suffix = name.strip_prefix("TC")?;
   suffix.parse::<u32>().ok()
@@ -371,7 +419,7 @@ fn create_or_switch_tc_state(
   state.parent_folder = parent_folder.to_string();
   state.current_tc_name = tc.clone();
   state.current_tc_folder = tc_folder.to_string_lossy().to_string();
-  state.current_step = count_png_files(&tc_folder);
+  state.current_step = screenshot_sequence_base(&tc_folder);
   state.status = "recording".to_string();
   upsert_tc_item(&mut state, &tc, new_status);
   save_tc_metadata_status(parent, &tc, new_status)?;
@@ -382,7 +430,7 @@ fn create_or_switch_tc_state(
 
 fn normalize_session(mut state: SessionState) -> SessionState {
   if !state.current_tc_folder.is_empty() {
-    state.current_step = count_png_files(Path::new(&state.current_tc_folder));
+    state.current_step = screenshot_sequence_base(Path::new(&state.current_tc_folder));
   }
   sync_tc_list_with_folders(&mut state);
   state
@@ -823,8 +871,8 @@ fn do_capture(
   let tc_folder = parent.join(&current_tc_name);
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
 
-  let existing_count = count_png_files(&tc_folder);
-  let step = current_step.max(existing_count) + 1;
+  let _ = current_step;
+  let step = screenshot_sequence_base(&tc_folder) + 1;
   let timestamp_for_file = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
   let unique_id = Uuid::new_v4().simple().to_string()[0..4].to_string();
   let file_name = format!("{:03}_{}_{}.png", step, timestamp_for_file, unique_id);
