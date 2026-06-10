@@ -291,6 +291,7 @@ h2 {
 .primary-btn,
 .secondary-btn,
 .capture-btn,
+.fullscreen-capture-btn,
 .danger-btn,
 .warning-btn,
 .ghost-btn {
@@ -341,6 +342,17 @@ h2 {
 .secondary-btn {
   color: #1e40af;
   background: #dbeafe;
+}
+
+.fullscreen-capture-btn {
+  color: #4338ca;
+  background: #e0e7ff;
+  font-weight: 900;
+}
+
+.fullscreen-capture-btn:hover {
+  color: #fff;
+  background: #4f46e5;
 }
 
 .danger-btn {

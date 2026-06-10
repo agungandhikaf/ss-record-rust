@@ -505,10 +505,19 @@ fn copy_image_to_clipboard(image: &image::DynamicImage) -> Result<(), String> {
     .map_err(|e| format!("Gagal menyalin screenshot ke clipboard: {e}"))
 }
 
-fn save_captured_image(image: image::DynamicImage, file_path: &Path) -> Result<(bool, Option<String>), String> {
+fn save_captured_image(
+  image: image::DynamicImage,
+  file_path: &Path,
+  fullscreen_mode: bool,
+) -> Result<(bool, Option<String>), String> {
   let (image_width, image_height) = image.dimensions();
 
-  let final_image = if let Some(crop) = calculate_browser_crop(image_width, image_height) {
+  // [FULLSCREEN_DELAY_CAPTURE_FIX]
+  // Untuk mode fullscreen/F11, simpan layar apa adanya. Jika crop Browser Area tetap dipakai,
+  // hasil fullscreen bisa terlihat seperti gagal karena area atas konten ikut terpotong.
+  let final_image = if fullscreen_mode {
+    image
+  } else if let Some(crop) = calculate_browser_crop(image_width, image_height) {
     image.crop_imm(crop.x, crop.y, crop.width, crop.height)
   } else {
     image
@@ -796,7 +805,12 @@ fn resume_tc(parent_folder: String, target_tc_name: String) -> Result<SessionSta
   Ok(state)
 }
 
-fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32) -> Result<CaptureResult, String> {
+fn do_capture(
+  parent_folder: String,
+  current_tc_name: String,
+  current_step: u32,
+  fullscreen_mode: bool,
+) -> Result<CaptureResult, String> {
   if parent_folder.trim().is_empty() {
     return Err("Parent folder belum dipilih.".to_string());
   }
@@ -824,7 +838,7 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
   // Di Windows, crop memakai batas window aktif sehingga taskbar tidak ikut.
   // Di macOS, capture native diprioritaskan agar window fullscreen di Space aktif tetap bisa diambil.
   let image = capture_display_image(screen, &file_path)?;
-  let (clipboard_copied, clipboard_error) = save_captured_image(image, &file_path)?;
+  let (clipboard_copied, clipboard_error) = save_captured_image(image, &file_path, fullscreen_mode)?;
 
   let capture = CaptureResult {
     tc_name: current_tc_name.clone(),
@@ -870,16 +884,24 @@ fn capture_screenshot(
   current_tc_name: String,
   current_step: u32,
   hide_window: bool,
+  fullscreen_mode: Option<bool>,
+  capture_delay_ms: Option<u64>,
 ) -> Result<CaptureResult, String> {
+  let fullscreen_mode = fullscreen_mode.unwrap_or(false);
+
   if hide_window {
     let _ = window.hide();
-    // [FULLSCREEN_CAPTURE_FIX]
-    // Fullscreen window kadang butuh sedikit waktu untuk repaint/focus kembali setelah app recorder disembunyikan.
-    // Delay ini mencegah hasil blank/stale terutama saat capture dari tombol app, bukan dari shortcut.
-    thread::sleep(Duration::from_millis(650));
+
+    // [FULLSCREEN_DELAY_CAPTURE_FIX]
+    // Capture tombol biasa hanya butuh delay pendek. Capture fullscreen butuh delay lebih panjang
+    // supaya user sempat pindah ke window fullscreen/F11, terutama di macOS Space terpisah.
+    let requested_delay = capture_delay_ms.unwrap_or(0).min(10_000);
+    let default_delay = if fullscreen_mode { 5_000 } else { 650 };
+    let delay_ms = requested_delay.max(default_delay);
+    thread::sleep(Duration::from_millis(delay_ms));
   }
 
-  let result = do_capture(parent_folder, current_tc_name, current_step);
+  let result = do_capture(parent_folder, current_tc_name, current_step, fullscreen_mode);
 
   if hide_window {
     let _ = window.show();

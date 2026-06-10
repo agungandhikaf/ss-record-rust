@@ -16,6 +16,7 @@ const elements = {
   chooseFolderBtn: document.querySelector('#chooseFolderBtn'),
   startBtn: document.querySelector('#startBtn'),
   captureBtn: document.querySelector('#captureBtn'),
+  captureFullscreenBtn: document.querySelector('#captureFullscreenBtn'),
   nextTcBtn: document.querySelector('#nextTcBtn'),
   markPendingBtn: document.querySelector('#markPendingBtn'),
   finishBtn: document.querySelector('#finishBtn'),
@@ -43,6 +44,7 @@ const GITHUB_REPO = 'agungandhikaf/ss-record-rust';
 const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const UPDATE_CHECK_TIMEOUT_MS = 15000;
+const FULLSCREEN_CAPTURE_DELAY_MS = 5000;
 
 
 let state = {
@@ -99,6 +101,7 @@ function allButtons() {
     elements.chooseFolderBtn,
     elements.startBtn,
     elements.captureBtn,
+    elements.captureFullscreenBtn,
     elements.nextTcBtn,
     elements.markPendingBtn,
     elements.finishBtn,
@@ -455,6 +458,7 @@ function render() {
     const isRecording = state.status === 'recording';
     elements.startBtn.disabled = flowUi.startDisabled;
     elements.captureBtn.disabled = !isRecording;
+    elements.captureFullscreenBtn.disabled = !isRecording;
     elements.nextTcBtn.disabled = !isRecording;
     elements.markPendingBtn.disabled = !isRecording;
     elements.finishBtn.disabled = !hasParent;
@@ -545,14 +549,21 @@ async function startFlow() {
   render();
 }
 
-async function captureScreenshot(hideWindow = false) {
+async function captureScreenshot(options = {}) {
   if (!state.parentFolder || state.status !== 'recording') return;
+
+  const legacyHideWindow = typeof options === 'boolean' ? options : false;
+  const hideWindow = typeof options === 'boolean' ? legacyHideWindow : Boolean(options.hideWindow);
+  const fullscreenMode = typeof options === 'boolean' ? false : Boolean(options.fullscreenMode);
+  const captureDelayMs = typeof options === 'boolean' ? 0 : Number(options.captureDelayMs || 0);
 
   const capture = await invoke('capture_screenshot', {
     parentFolder: state.parentFolder,
     currentTcName: state.currentTcName,
     currentStep: state.currentStep,
-    hideWindow
+    hideWindow,
+    fullscreenMode,
+    captureDelayMs
   });
 
   state = {
@@ -580,6 +591,23 @@ async function captureScreenshot(hideWindow = false) {
     showToast(`Screenshot tersimpan: ${capture.fileName}`);
     await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
   }
+}
+
+async function captureFullscreenScreenshot() {
+  if (!state.parentFolder || state.status !== 'recording') return;
+
+  // [FULLSCREEN_DELAY_CAPTURE_FIX]
+  // Fullscreen macOS berada di Space terpisah dan window F11 kadang tidak kembali fokus otomatis.
+  // Mode ini memberi jeda agar user bisa pindah ke window fullscreen sebelum capture dilakukan.
+  showToast(`Mode fullscreen aktif. Pindah ke window target, capture dalam ${FULLSCREEN_CAPTURE_DELAY_MS / 1000} detik.`);
+  await notifyUser('Capture fullscreen siap', `Pindah ke window fullscreen. Screenshot diambil dalam ${FULLSCREEN_CAPTURE_DELAY_MS / 1000} detik.`);
+  await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+  return captureScreenshot({
+    hideWindow: true,
+    fullscreenMode: true,
+    captureDelayMs: FULLSCREEN_CAPTURE_DELAY_MS
+  });
 }
 
 async function nextTc() {
@@ -714,6 +742,7 @@ function registerButtonHandlers() {
 
   // Capture dari tombol akan hide window sebentar supaya UI aplikasi tidak ikut masuk screenshot.
   elements.captureBtn.addEventListener('click', () => runAction(() => captureScreenshot(true)));
+  elements.captureFullscreenBtn.addEventListener('click', () => runAction(() => captureFullscreenScreenshot()));
 
   elements.nextTcBtn.addEventListener('click', () => runAction(nextTc));
   elements.markPendingBtn.addEventListener('click', () => runAction(markPending));
