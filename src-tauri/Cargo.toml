@@ -1,6 +1,6 @@
 [package]
 name = "mytbc-tauri"
-version = "1.0.10"
+version = "1.0.9"
 description = "Manual screenshot recorder for Tester Budak Corporate using Tauri + Rust"
 authors = ["Teman Akun"]
 license = "MIT"
