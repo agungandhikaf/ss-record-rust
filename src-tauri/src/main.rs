@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use arboard::{Clipboard, ImageData};
 use chrono::Local;
+use image::GenericImageView;
 use screenshots::Screen;
 use serde::{Deserialize, Serialize};
 use std::{
+  borrow::Cow,
   fs,
   path::{Path, PathBuf},
   sync::Mutex,
@@ -64,6 +67,10 @@ struct CaptureResult {
   file_name: String,
   file_path: String,
   timestamp: String,
+  #[serde(default)]
+  clipboard_copied: bool,
+  #[serde(default)]
+  clipboard_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -455,10 +462,133 @@ fn clamp_crop_rect(rect: CropRect, image_width: u32, image_height: u32) -> Optio
   Some(CropRect { x, y, width, height })
 }
 
+fn is_fullscreen_like_window(left: i32, top: i32, right: i32, bottom: i32, image_width: u32, image_height: u32) -> bool {
+  if image_width < 120 || image_height < 120 || right <= left || bottom <= top {
+    return false;
+  }
+
+  let visible_left = left.max(0) as u32;
+  let visible_top = top.max(0) as u32;
+  let visible_right = (right.max(0) as u32).min(image_width);
+  let visible_bottom = (bottom.max(0) as u32).min(image_height);
+
+  if visible_right <= visible_left || visible_bottom <= visible_top {
+    return false;
+  }
+
+  let visible_width = visible_right.saturating_sub(visible_left);
+  let visible_height = visible_bottom.saturating_sub(visible_top);
+  let near_left_edge = left <= 12 && visible_left <= 12;
+  let near_top_edge = top <= 12 && visible_top <= 12;
+  let covers_width = visible_width >= image_width.saturating_sub(16);
+  let covers_height = visible_height >= image_height.saturating_sub(16);
+
+  near_left_edge && near_top_edge && covers_width && covers_height
+}
+
+fn copy_image_to_clipboard(image: &image::DynamicImage) -> Result<(), String> {
+  let rgba = image.to_rgba8();
+  let width = rgba.width() as usize;
+  let height = rgba.height() as usize;
+  let bytes = rgba.into_raw();
+
+  // [CLIPBOARD_CAPTURE_FIX]
+  // Setiap screenshot tetap disimpan sebagai file PNG, lalu image final yang sama juga disalin ke clipboard.
+  // Clipboard failure tidak boleh menggagalkan capture karena evidence file tetap lebih penting.
+  let mut clipboard = Clipboard::new().map_err(|e| format!("Gagal membuka clipboard: {e}"))?;
+  clipboard
+    .set_image(ImageData {
+      width,
+      height,
+      bytes: Cow::Owned(bytes),
+    })
+    .map_err(|e| format!("Gagal menyalin screenshot ke clipboard: {e}"))
+}
+
+fn save_captured_image(image: image::DynamicImage, file_path: &Path) -> Result<(bool, Option<String>), String> {
+  let (image_width, image_height) = image.dimensions();
+
+  let final_image = if let Some(crop) = calculate_browser_crop(image_width, image_height) {
+    image.crop_imm(crop.x, crop.y, crop.width, crop.height)
+  } else {
+    image
+  };
+
+  final_image
+    .save(file_path)
+    .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
+
+  let clipboard_status = match copy_image_to_clipboard(&final_image) {
+    Ok(()) => (true, None),
+    Err(error) => (false, Some(error)),
+  };
+
+  Ok(clipboard_status)
+}
+
+#[cfg(target_os = "macos")]
+fn capture_display_image(screen: &Screen, file_path: &Path) -> Result<image::DynamicImage, String> {
+  use std::process::Command;
+
+  let temp_name = file_path
+    .file_name()
+    .and_then(|name| name.to_str())
+    .map(|name| format!(".{name}.native-capture.tmp.png"))
+    .unwrap_or_else(|| ".native-capture.tmp.png".to_string());
+  let temp_path = file_path.with_file_name(temp_name);
+
+  // [FULLSCREEN_CAPTURE_FIX]
+  // macOS fullscreen apps live in a separate Space and the screenshots crate can fail/return a stale desktop
+  // in some setups. The native screencapture command is more reliable for fullscreen windows, so try it first
+  // and fall back to the Rust crate if the command is unavailable or blocked by Screen Recording permission.
+  let native_result = Command::new("screencapture").arg("-x").arg(&temp_path).output();
+
+  if let Ok(output) = native_result {
+    if output.status.success() && temp_path.exists() {
+      match image::open(&temp_path) {
+        Ok(image) => {
+          let _ = fs::remove_file(&temp_path);
+          return Ok(image);
+        }
+        Err(_) => {
+          let _ = fs::remove_file(&temp_path);
+        }
+      }
+    } else {
+      let _ = fs::remove_file(&temp_path);
+    }
+  }
+
+  let image = screen.capture().map_err(|e| format!("Gagal mengambil screenshot: {e}"))?;
+  Ok(image::DynamicImage::ImageRgba8(image))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_display_image(screen: &Screen, _file_path: &Path) -> Result<image::DynamicImage, String> {
+  let image = screen.capture().map_err(|e| format!("Gagal mengambil screenshot: {e}"))?;
+  Ok(image::DynamicImage::ImageRgba8(image))
+}
+
 fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRect> {
   let (top_crop, bottom_crop) = browser_crop_insets();
 
   if let Some((left, top, right, bottom)) = active_window_bounds() {
+    // [FULLSCREEN_CAPTURE_FIX]
+    // Kalau browser/app sedang F11/fullscreen, address bar biasanya tidak tampil.
+    // Jangan pakai crop browser-area karena top crop 48/72px membuat hasil seperti gagal/terpotong.
+    if is_fullscreen_like_window(left, top, right, bottom, image_width, image_height) {
+      return clamp_crop_rect(
+        CropRect {
+          x: 0,
+          y: 0,
+          width: image_width,
+          height: image_height,
+        },
+        image_width,
+        image_height,
+      );
+    }
+
     let x = left.max(0) as u32;
     let y = top.max(0) as u32 + top_crop;
     let right = right.max(0) as u32;
@@ -692,20 +822,9 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
   // Browser Area Mode:
   // Ambil layar utama lalu crop agar hasil dimulai dari area address/search bar.
   // Di Windows, crop memakai batas window aktif sehingga taskbar tidak ikut.
-  // Di macOS/Linux, fallback memakai offset tetap pada monitor utama.
-  let image = screen.capture().map_err(|e| format!("Gagal mengambil screenshot: {e}"))?;
-  let (image_width, image_height) = image.dimensions();
-
-  if let Some(crop) = calculate_browser_crop(image_width, image_height) {
-    let cropped = image::imageops::crop_imm(&image, crop.x, crop.y, crop.width, crop.height).to_image();
-    cropped
-      .save(&file_path)
-      .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
-  } else {
-    image
-      .save(&file_path)
-      .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
-  }
+  // Di macOS, capture native diprioritaskan agar window fullscreen di Space aktif tetap bisa diambil.
+  let image = capture_display_image(screen, &file_path)?;
+  let (clipboard_copied, clipboard_error) = save_captured_image(image, &file_path)?;
 
   let capture = CaptureResult {
     tc_name: current_tc_name.clone(),
@@ -714,6 +833,8 @@ fn do_capture(parent_folder: String, current_tc_name: String, current_step: u32)
     file_name,
     file_path: file_path.to_string_lossy().to_string(),
     timestamp: now_iso(),
+    clipboard_copied,
+    clipboard_error,
   };
 
   let mut metadata = load_or_init_metadata(parent, &current_tc_name);
@@ -752,7 +873,10 @@ fn capture_screenshot(
 ) -> Result<CaptureResult, String> {
   if hide_window {
     let _ = window.hide();
-    thread::sleep(Duration::from_millis(320));
+    // [FULLSCREEN_CAPTURE_FIX]
+    // Fullscreen window kadang butuh sedikit waktu untuk repaint/focus kembali setelah app recorder disembunyikan.
+    // Delay ini mencegah hasil blank/stale terutama saat capture dari tombol app, bukan dari shortcut.
+    thread::sleep(Duration::from_millis(650));
   }
 
   let result = do_capture(parent_folder, current_tc_name, current_step);

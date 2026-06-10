@@ -425,7 +425,12 @@ function render() {
   }
 
   if (state.lastCapture?.filePath) {
-    elements.lastCaptureText.textContent = `${state.lastCapture.tcName} - Step ${state.lastCapture.step}: ${state.lastCapture.fileName}`;
+    const clipboardText = state.lastCapture.clipboardCopied
+      ? ' • Clipboard OK'
+      : state.lastCapture.clipboardError
+        ? ' • Clipboard gagal'
+        : '';
+    elements.lastCaptureText.textContent = `${state.lastCapture.tcName} - Step ${state.lastCapture.step}: ${state.lastCapture.fileName}${clipboardText}`;
     elements.lastCapturePanel.classList.remove('hidden');
   } else {
     elements.lastCapturePanel.classList.add('hidden');
@@ -564,8 +569,17 @@ async function captureScreenshot(hideWindow = false) {
   state = { ...state, ...restored, lastCapture: capture };
 
   render();
-  showToast(`Screenshot tersimpan: ${capture.fileName}`);
-  await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
+
+  if (capture.clipboardCopied) {
+    showToast(`Screenshot tersimpan & masuk clipboard: ${capture.fileName}`);
+    await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step} sudah masuk clipboard.`);
+  } else if (capture.clipboardError) {
+    showToast(`Screenshot tersimpan, tapi clipboard gagal. ${capture.fileName}`);
+    await notifyUser('Screenshot tersimpan', `Clipboard gagal: ${capture.clipboardError}`);
+  } else {
+    showToast(`Screenshot tersimpan: ${capture.fileName}`);
+    await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
+  }
 }
 
 async function nextTc() {
