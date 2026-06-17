@@ -1,6 +1,6 @@
 {
   "name": "mytbc-tauri",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "private": true,
   "description": "Manual screenshot recorder per TC folder for Tester Budak Corporate using Tauri + Rust.",
   "type": "module",

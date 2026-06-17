@@ -510,6 +510,32 @@ fn clamp_crop_rect(rect: CropRect, image_width: u32, image_height: u32) -> Optio
   Some(CropRect { x, y, width, height })
 }
 
+fn is_suspicious_browser_crop(rect: &CropRect, image_width: u32, image_height: u32) -> bool {
+  // [CROP_GUARD_FIX]
+  // Report user menunjukkan hasil screenshot hanya berupa strip kecil bagian bawah layar.
+  // Itu terjadi saat Windows mengembalikan foreground window yang bukan browser utama
+  // (misalnya taskbar/language bar/child window) atau koordinat aktif belum stabil setelah app di-hide.
+  // Daripada menyimpan crop kecil yang tidak berguna, fallback ke full screenshot.
+  if image_width < 120 || image_height < 120 {
+    return true;
+  }
+
+  let min_width = (image_width as f32 * 0.35) as u32;
+  let min_height = (image_height as f32 * 0.45) as u32;
+  if rect.width < min_width || rect.height < min_height {
+    return true;
+  }
+
+  // Kalau crop dimulai terlalu bawah, hampir pasti yang kebaca adalah window kecil/overlay,
+  // bukan area browser yang mau direkam.
+  let lower_half_start = (image_height as f32 * 0.45) as u32;
+  if rect.y > lower_half_start && rect.height < (image_height as f32 * 0.70) as u32 {
+    return true;
+  }
+
+  false
+}
+
 fn is_fullscreen_like_window(left: i32, top: i32, right: i32, bottom: i32, image_width: u32, image_height: u32) -> bool {
   if image_width < 120 || image_height < 120 || right <= left || bottom <= top {
     return false;
@@ -652,7 +678,18 @@ fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRec
     let bottom = bottom.max(0) as u32;
     let width = right.saturating_sub(x);
     let height = bottom.saturating_sub(y);
-    return clamp_crop_rect(CropRect { x, y, width, height }, image_width, image_height);
+
+    if let Some(crop) = clamp_crop_rect(CropRect { x, y, width, height }, image_width, image_height) {
+      // [CROP_GUARD_FIX]
+      // Jika hasil crop terlalu kecil/aneh, jangan dipakai. Fallback ke full screenshot dilakukan
+      // oleh save_captured_image() saat calculate_browser_crop() mengembalikan None.
+      if is_suspicious_browser_crop(&crop, image_width, image_height) {
+        return None;
+      }
+      return Some(crop);
+    }
+
+    return None;
   }
 
   // Fallback untuk macOS/Linux: crop monitor utama dengan offset tetap.
