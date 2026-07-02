@@ -54,6 +54,7 @@
         <div class="action-grid">
           <button id="startBtn" class="primary-btn start-state-btn">Start Flow</button>
           <button id="captureBtn" class="capture-btn featured-action">Capture Screenshot</button>
+          <button id="captureLongBtn" class="long-capture-btn">Capture Long Screenshot</button>
           <button id="captureFullscreenBtn" class="fullscreen-capture-btn">Capture Fullscreen (5s)</button>
           <button id="nextTcBtn" class="secondary-btn">Next TC</button>
           <button id="markPendingBtn" class="warning-btn">Mark Pending</button>
@@ -78,6 +79,7 @@
         <h2>Shortcut</h2>
         <div class="shortcut-list">
           <div><kbd id="captureShortcut">Ctrl/⌘ + Shift + S</kbd><span>Capture</span></div>
+          <div><kbd id="longCaptureShortcut">Ctrl/⌘ + Shift + A</kbd><span>Long Capture</span></div>
           <div><kbd id="nextTcShortcut">Ctrl/⌘ + Shift + N</kbd><span>Next TC</span></div>
           <div><kbd id="pendingShortcut">Ctrl/⌘ + Shift + P</kbd><span>Mark Pending</span></div>
           <div><kbd id="finishShortcut">Ctrl/⌘ + Shift + F</kbd><span>Finish</span></div>
@@ -110,7 +112,7 @@
       <section class="panel info-panel">
         <h2>Konsep Flow</h2>
         <p><strong>Next TC</strong> menandai TC aktif sebagai Done dan pindah ke TC baru. <strong>Mark Pending</strong> menandai TC aktif sebagai Pending, lalu lanjut ke TC baru. Untuk melanjutkan TC lama, klik <strong>Resume</strong> pada TC List.</p>
-        <p class="small-note">Mode screenshot: Browser Area. Untuk window biasa, aplikasi akan crop area browser agar evidence lebih rapi. Untuk window fullscreen/F11, gunakan <strong>Capture Fullscreen (5s)</strong>, lalu segera pindah ke window fullscreen yang ingin diambil sebelum hitungan selesai.</p>
+        <p class="small-note">Mode screenshot: Browser Area. Gunakan <strong>Long Capture</strong> pada halaman browser dengan scroll vertikal utama; jangan gerakkan mouse atau mengetik sampai proses selesai. Untuk window fullscreen/F11, gunakan <strong>Capture Fullscreen (5s)</strong>, lalu segera pindah ke window fullscreen yang ingin diambil sebelum hitungan selesai.</p>
       </section>
 
       <div id="toast" class="toast hidden"></div>

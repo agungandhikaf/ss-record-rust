@@ -16,6 +16,7 @@ const elements = {
   chooseFolderBtn: document.querySelector('#chooseFolderBtn'),
   startBtn: document.querySelector('#startBtn'),
   captureBtn: document.querySelector('#captureBtn'),
+  captureLongBtn: document.querySelector('#captureLongBtn'),
   captureFullscreenBtn: document.querySelector('#captureFullscreenBtn'),
   nextTcBtn: document.querySelector('#nextTcBtn'),
   markPendingBtn: document.querySelector('#markPendingBtn'),
@@ -25,6 +26,7 @@ const elements = {
   openTcBtn: document.querySelector('#openTcBtn'),
   tcList: document.querySelector('#tcList'),
   captureShortcut: document.querySelector('#captureShortcut'),
+  longCaptureShortcut: document.querySelector('#longCaptureShortcut'),
   nextTcShortcut: document.querySelector('#nextTcShortcut'),
   pendingShortcut: document.querySelector('#pendingShortcut'),
   finishShortcut: document.querySelector('#finishShortcut'),
@@ -57,6 +59,7 @@ let state = {
   lastCapture: null,
   shortcuts: {
     capture: isMac ? '⌘ + Shift + S' : 'Ctrl + Shift + S',
+    longCapture: isMac ? '⌘ + Shift + A' : 'Ctrl + Shift + A',
     nextTc: isMac ? '⌘ + Shift + N' : 'Ctrl + Shift + N',
     pending: isMac ? '⌘ + Shift + P' : 'Ctrl + Shift + P',
     finish: isMac ? '⌘ + Shift + F' : 'Ctrl + Shift + F'
@@ -101,6 +104,7 @@ function allButtons() {
     elements.chooseFolderBtn,
     elements.startBtn,
     elements.captureBtn,
+    elements.captureLongBtn,
     elements.captureFullscreenBtn,
     elements.nextTcBtn,
     elements.markPendingBtn,
@@ -415,6 +419,7 @@ function render() {
   elements.startBtn.dataset.flowState = flowUi.key;
 
   elements.captureShortcut.textContent = state.shortcuts.capture;
+  elements.longCaptureShortcut.textContent = state.shortcuts.longCapture;
   elements.nextTcShortcut.textContent = state.shortcuts.nextTc;
   elements.pendingShortcut.textContent = state.shortcuts.pending;
   elements.finishShortcut.textContent = state.shortcuts.finish;
@@ -458,6 +463,7 @@ function render() {
     const isRecording = state.status === 'recording';
     elements.startBtn.disabled = flowUi.startDisabled;
     elements.captureBtn.disabled = !isRecording;
+    elements.captureLongBtn.disabled = !isRecording;
     elements.captureFullscreenBtn.disabled = !isRecording;
     elements.nextTcBtn.disabled = !isRecording;
     elements.markPendingBtn.disabled = !isRecording;
@@ -610,6 +616,38 @@ async function captureFullscreenScreenshot() {
   });
 }
 
+async function captureLongScreenshot(hideWindow = false) {
+  if (!state.parentFolder || state.status !== 'recording') return;
+
+  showToast('Long screenshot berjalan. Jangan scroll, gerakkan mouse, atau mengetik sampai selesai.');
+  const capture = await invoke('capture_long_screenshot', {
+    parentFolder: state.parentFolder,
+    currentTcName: state.currentTcName,
+    currentStep: state.currentStep,
+    hideWindow
+  });
+
+  state = {
+    ...state,
+    currentStep: capture.step,
+    currentTcName: capture.tcName,
+    currentTcFolder: capture.tcFolder,
+    status: 'recording',
+    lastCapture: capture
+  };
+
+  const restored = await invoke('read_session', { parentFolder: state.parentFolder });
+  state = { ...state, ...restored, lastCapture: capture };
+  render();
+
+  if (capture.clipboardCopied) {
+    showToast(`Long screenshot tersimpan & masuk clipboard: ${capture.fileName}`);
+  } else {
+    showToast(`Long screenshot tersimpan: ${capture.fileName}`);
+  }
+  await notifyUser('Long screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
+}
+
 async function nextTc() {
   if (!state.parentFolder || state.status !== 'recording') return;
 
@@ -742,6 +780,7 @@ function registerButtonHandlers() {
 
   // Capture dari tombol akan hide window sebentar supaya UI aplikasi tidak ikut masuk screenshot.
   elements.captureBtn.addEventListener('click', () => runAction(() => captureScreenshot(true)));
+  elements.captureLongBtn.addEventListener('click', () => runAction(() => captureLongScreenshot(true)));
   elements.captureFullscreenBtn.addEventListener('click', () => runAction(() => captureFullscreenScreenshot()));
 
   elements.nextTcBtn.addEventListener('click', () => runAction(nextTc));
@@ -763,6 +802,7 @@ function registerButtonHandlers() {
 
 async function registerShortcutListeners() {
   await listen('shortcut-capture', () => runAction(() => captureScreenshot(false)));
+  await listen('shortcut-capture-long', () => runAction(() => captureLongScreenshot(false)));
   await listen('shortcut-next-tc', () => runAction(nextTc));
   await listen('shortcut-mark-pending', () => runAction(markPending));
   await listen('shortcut-finish', () => runAction(finishFlow));

@@ -1,6 +1,6 @@
 [package]
 name = "mytbc-tauri"
-version = "1.0.13"
+version = "1.0.14"
 description = "Manual screenshot recorder for Tester Budak Corporate using Tauri + Rust"
 authors = ["Teman Akun"]
 license = "MIT"
@@ -22,7 +22,7 @@ tauri = { version = "1.6", features = ["api-all"] }
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

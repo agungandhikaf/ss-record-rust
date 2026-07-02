@@ -7,6 +7,7 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 - Pilih parent folder saja.
 - Auto create folder `TC001`, `TC002`, `TC003`, dst.
 - Screenshot manual via tombol atau shortcut.
+- Long screenshot halaman browser: scroll otomatis, deteksi overlap, lalu gabungkan menjadi satu PNG.
 - Mode screenshot **Browser Area**:
   - Windows: crop dari area address/search bar pada window aktif sehingga taskbar tidak ikut.
   - macOS/Linux: fallback crop monitor utama dengan offset tetap.
@@ -20,11 +21,13 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 ## Shortcut
 
 - Windows/Linux: `Ctrl + Shift + S` = Capture
+- Windows: `Ctrl + Shift + A` = Long Capture
 - Windows/Linux: `Ctrl + Shift + N` = Next TC
 - Windows/Linux: `Ctrl + Shift + P` = Mark Pending
 - Windows/Linux: `Ctrl + Shift + F` = Finish
 
 - Mac: `Command + Shift + S` = Capture
+- Mac: `Command + Shift + A` = Long Capture
 - Mac: `Command + Shift + N` = Next TC
 - Mac: `Command + Shift + P` = Mark Pending
 - Mac: `Command + Shift + F` = Finish
@@ -91,6 +94,14 @@ fn browser_crop_insets() -> (u32, u32)
 ```
 
 Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas yang dipotong.
+
+## Catatan long screenshot
+
+- Long Capture didukung di Windows dan macOS untuk halaman browser dengan scroll vertikal utama.
+- Proses dimulai dari bagian atas halaman dan berhenti otomatis ketika viewport tidak berubah lagi.
+- Jangan scroll, mengetik, memindahkan window, atau menggerakkan fokus selama proses berlangsung.
+- macOS memerlukan izin **Accessibility** dan **Screen Recording** untuk MyTBC.
+- Sticky header sederhana ditangani saat stitching. Halaman dengan animasi terus-menerus, infinite scroll, atau nested scroll dapat dihentikan jika overlap tidak aman.
 
 
 ## Update 1.0.2 - Compact Action Layout

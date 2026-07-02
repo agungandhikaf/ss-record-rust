@@ -2,7 +2,7 @@
 
 use arboard::{Clipboard, ImageData};
 use chrono::Local;
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use screenshots::Screen;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -92,6 +92,10 @@ struct CropRect {
   width: u32,
   height: u32,
 }
+
+const LONG_CAPTURE_MAX_FRAMES: usize = 40;
+const LONG_CAPTURE_MAX_HEIGHT: u32 = 60_000;
+const LONG_CAPTURE_SCROLL_DELAY_MS: u64 = 650;
 
 fn default_session_status() -> String {
   "idle".to_string()
@@ -323,7 +327,7 @@ fn save_tc_metadata_status(parent: &Path, tc_name: &str, status: &str) -> Result
   write_json(&metadata_path(parent, tc_name), &metadata)
 }
 
-fn sort_tc_list(tc_list: &mut Vec<TcItem>) {
+fn sort_tc_list(tc_list: &mut [TcItem]) {
   tc_list.sort_by_key(|item| parse_tc_number(&item.tc_name).unwrap_or(u32::MAX));
 }
 
@@ -579,24 +583,22 @@ fn copy_image_to_clipboard(image: &image::DynamicImage) -> Result<(), String> {
     .map_err(|e| format!("Gagal menyalin screenshot ke clipboard: {e}"))
 }
 
-fn save_captured_image(
-  image: image::DynamicImage,
-  file_path: &Path,
-  fullscreen_mode: bool,
-) -> Result<(bool, Option<String>), String> {
+fn prepare_captured_image(image: DynamicImage, fullscreen_mode: bool) -> DynamicImage {
   let (image_width, image_height) = image.dimensions();
 
   // [FULLSCREEN_DELAY_CAPTURE_FIX]
   // Untuk mode fullscreen/F11, simpan layar apa adanya. Jika crop Browser Area tetap dipakai,
   // hasil fullscreen bisa terlihat seperti gagal karena area atas konten ikut terpotong.
-  let final_image = if fullscreen_mode {
+  if fullscreen_mode {
     image
   } else if let Some(crop) = calculate_browser_crop(image_width, image_height) {
     image.crop_imm(crop.x, crop.y, crop.width, crop.height)
   } else {
     image
-  };
+  }
+}
 
+fn save_final_image(final_image: DynamicImage, file_path: &Path) -> Result<(bool, Option<String>), String> {
   final_image
     .save(file_path)
     .map_err(|e| format!("Gagal menyimpan screenshot: {e}"))?;
@@ -607,6 +609,14 @@ fn save_captured_image(
   };
 
   Ok(clipboard_status)
+}
+
+fn save_captured_image(
+  image: DynamicImage,
+  file_path: &Path,
+  fullscreen_mode: bool,
+) -> Result<(bool, Option<String>), String> {
+  save_final_image(prepare_captured_image(image, fullscreen_mode), file_path)
 }
 
 #[cfg(target_os = "macos")]
@@ -705,6 +715,231 @@ fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRec
     image_width,
     image_height,
   )
+}
+
+#[derive(Clone, Copy)]
+enum ScrollKey {
+  DocumentStart,
+  PageDown,
+}
+
+#[cfg(target_os = "windows")]
+fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
+  use std::mem::{size_of, zeroed};
+  use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_CONTROL, VK_HOME,
+    VK_NEXT,
+  };
+
+  unsafe {
+    let mut inputs: [INPUT; 4] = zeroed();
+    let input_count = match key {
+      ScrollKey::DocumentStart => {
+        inputs[0].r#type = INPUT_KEYBOARD;
+        inputs[0].Anonymous.ki.wVk = VK_CONTROL;
+        inputs[1].r#type = INPUT_KEYBOARD;
+        inputs[1].Anonymous.ki.wVk = VK_HOME;
+        inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
+        inputs[2].r#type = INPUT_KEYBOARD;
+        inputs[2].Anonymous.ki.wVk = VK_HOME;
+        inputs[2].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
+        inputs[3].r#type = INPUT_KEYBOARD;
+        inputs[3].Anonymous.ki.wVk = VK_CONTROL;
+        inputs[3].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+        4
+      }
+      ScrollKey::PageDown => {
+        inputs[0].r#type = INPUT_KEYBOARD;
+        inputs[0].Anonymous.ki.wVk = VK_NEXT;
+        inputs[0].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
+        inputs[1].r#type = INPUT_KEYBOARD;
+        inputs[1].Anonymous.ki.wVk = VK_NEXT;
+        inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
+        2
+      }
+    };
+
+    let sent = SendInput(
+      input_count as u32,
+      inputs.as_ptr(),
+      size_of::<INPUT>() as i32,
+    );
+    if sent != input_count as u32 {
+      return Err("Gagal mengirim tombol scroll ke window aktif.".to_string());
+    }
+  }
+
+  Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
+  use std::process::Command;
+
+  let script = match key {
+    ScrollKey::DocumentStart => {
+      r#"tell application "System Events" to key code 126 using command down"#
+    }
+    ScrollKey::PageDown => r#"tell application "System Events" to key code 121"#,
+  };
+
+  let output = Command::new("osascript")
+    .args(["-e", script])
+    .output()
+    .map_err(|e| format!("Gagal menjalankan kontrol scroll macOS: {e}"))?;
+
+  if output.status.success() {
+    Ok(())
+  } else {
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(format!(
+      "macOS menolak kontrol scroll. Aktifkan Accessibility untuk MyTBC di System Settings > Privacy & Security > Accessibility. {detail}"
+    ))
+  }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn send_scroll_key(_key: ScrollKey) -> Result<(), String> {
+  Err("Long screenshot saat ini hanya didukung di Windows dan macOS.".to_string())
+}
+
+fn sampled_image_difference(first: &DynamicImage, second: &DynamicImage) -> Option<f64> {
+  if first.dimensions() != second.dimensions() {
+    return None;
+  }
+
+  let first = first.to_rgb8();
+  let second = second.to_rgb8();
+  let width = first.width();
+  let height = first.height();
+  let x_step = (width / 48).max(1) as usize;
+  let y_step = (height / 48).max(1) as usize;
+  let mut difference = 0_u64;
+  let mut samples = 0_u64;
+
+  for y in (0..height).step_by(y_step) {
+    for x in (0..width).step_by(x_step) {
+      let left = first.get_pixel(x, y).0;
+      let right = second.get_pixel(x, y).0;
+      difference += left[0].abs_diff(right[0]) as u64;
+      difference += left[1].abs_diff(right[1]) as u64;
+      difference += left[2].abs_diff(right[2]) as u64;
+      samples += 3;
+    }
+  }
+
+  Some(difference as f64 / samples.max(1) as f64)
+}
+
+fn overlap_score(previous: &RgbaImage, current: &RgbaImage, current_start: u32, overlap: u32) -> f64 {
+  let width = previous.width();
+  let previous_start = previous.height() - overlap;
+  let x_margin = width / 20;
+  let usable_width = width.saturating_sub(x_margin * 2).max(1);
+  let x_step = (usable_width / 32).max(1) as usize;
+  let y_step = (overlap / 32).max(1) as usize;
+  let mut difference = 0_u64;
+  let mut samples = 0_u64;
+
+  for relative_y in (0..overlap).step_by(y_step) {
+    for x in (x_margin..x_margin + usable_width).step_by(x_step) {
+      let left = previous.get_pixel(x.min(width - 1), previous_start + relative_y).0;
+      let right = current.get_pixel(x.min(width - 1), current_start + relative_y).0;
+      difference += left[0].abs_diff(right[0]) as u64;
+      difference += left[1].abs_diff(right[1]) as u64;
+      difference += left[2].abs_diff(right[2]) as u64;
+      samples += 3;
+    }
+  }
+
+  // Kandidat dengan area pembanding lebih besar sedikit diprioritaskan karena lebih sulit
+  // menghasilkan kecocokan palsu pada area halaman yang polos.
+  difference as f64 / samples.max(1) as f64 + 120.0 / samples.max(1) as f64
+}
+
+fn find_append_start(previous: &DynamicImage, current: &DynamicImage) -> Result<u32, String> {
+  if previous.dimensions() != current.dimensions() {
+    return Err("Ukuran viewport berubah saat long screenshot berjalan.".to_string());
+  }
+
+  let previous = previous.to_rgba8();
+  let current = current.to_rgba8();
+  let height = previous.height();
+  if height < 80 {
+    return Err("Viewport terlalu pendek untuk digabungkan.".to_string());
+  }
+
+  let max_header = (height / 5).min(160);
+  let min_overlap = 8_u32;
+  let mut best: Option<(f64, u32)> = None;
+
+  for current_start in (0..=max_header).step_by(4) {
+    let max_overlap = height.saturating_sub(current_start + 1);
+    if max_overlap < min_overlap {
+      continue;
+    }
+
+    for overlap in (min_overlap..=max_overlap).step_by(4) {
+      let score = overlap_score(&previous, &current, current_start, overlap);
+      let append_start = current_start + overlap;
+      if best.map(|(best_score, _)| score < best_score).unwrap_or(true) {
+        best = Some((score, append_start));
+      }
+    }
+  }
+
+  let (score, append_start) =
+    best.ok_or_else(|| "Tidak menemukan area overlap untuk long screenshot.".to_string())?;
+
+  if score > 22.0 {
+    return Err(
+      "Area halaman berubah terlalu banyak saat di-scroll sehingga screenshot tidak aman untuk digabungkan."
+        .to_string(),
+    );
+  }
+
+  Ok(append_start)
+}
+
+fn stitch_long_capture(frames: &[(DynamicImage, u32)]) -> Result<DynamicImage, String> {
+  let (first, _) = frames
+    .first()
+    .ok_or_else(|| "Tidak ada frame long screenshot.".to_string())?;
+  let width = first.width();
+  let mut total_height = first.height();
+
+  for (frame, append_start) in frames.iter().skip(1) {
+    if frame.width() != width || *append_start >= frame.height() {
+      return Err("Frame long screenshot tidak konsisten.".to_string());
+    }
+    total_height = total_height.saturating_add(frame.height() - append_start);
+    if total_height > LONG_CAPTURE_MAX_HEIGHT {
+      return Err(format!(
+        "Halaman terlalu panjang. Batas hasil long screenshot adalah {LONG_CAPTURE_MAX_HEIGHT}px."
+      ));
+    }
+  }
+
+  let mut output = RgbaImage::new(width, total_height);
+  let first_rgba = first.to_rgba8();
+  image::imageops::replace(&mut output, &first_rgba, 0, 0);
+  let mut output_y = first.height();
+
+  for (frame, append_start) in frames.iter().skip(1) {
+    let rgba = frame.to_rgba8();
+    let portion = image::imageops::crop_imm(
+      &rgba,
+      0,
+      *append_start,
+      rgba.width(),
+      rgba.height() - append_start,
+    )
+    .to_image();
+    image::imageops::replace(&mut output, &portion, 0, output_y as i64);
+    output_y += portion.height();
+  }
+
+  Ok(DynamicImage::ImageRgba8(output))
 }
 
 fn app_config_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -962,6 +1197,111 @@ fn do_capture(
   Ok(capture)
 }
 
+fn do_long_capture(
+  parent_folder: String,
+  current_tc_name: String,
+  current_step: u32,
+) -> Result<CaptureResult, String> {
+  if parent_folder.trim().is_empty() {
+    return Err("Parent folder belum dipilih.".to_string());
+  }
+
+  if current_tc_name.trim().is_empty() {
+    return Err("Flow belum dimulai. Klik Start / Resume Flow dulu.".to_string());
+  }
+
+  let parent = Path::new(&parent_folder);
+  let tc_folder = parent.join(&current_tc_name);
+  fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
+
+  let _ = current_step;
+  let step = screenshot_sequence_base(&tc_folder) + 1;
+  let timestamp_for_file = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
+  let unique_id = Uuid::new_v4().simple().to_string()[0..4].to_string();
+  let file_name = format!("{:03}_{}_{}_long.png", step, timestamp_for_file, unique_id);
+  let file_path = tc_folder.join(&file_name);
+
+  let screens = Screen::all().map_err(|e| format!("Gagal membaca layar: {e}"))?;
+  let screen = screens.first().ok_or_else(|| "Tidak ada layar yang bisa dibaca.".to_string())?;
+
+  // Beri waktu agar tombol shortcut fisik sudah dilepas sebelum mengirim Ctrl/Cmd+Home.
+  thread::sleep(Duration::from_millis(350));
+  send_scroll_key(ScrollKey::DocumentStart)?;
+  thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
+
+  let first_image = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+  let mut frames = vec![(first_image, 0_u32)];
+  let mut reached_end = false;
+
+  for _ in 1..LONG_CAPTURE_MAX_FRAMES {
+    send_scroll_key(ScrollKey::PageDown)?;
+    thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
+
+    let current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+    let previous = &frames.last().expect("frame pertama selalu tersedia").0;
+    let difference = sampled_image_difference(previous, &current)
+      .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
+
+    if difference <= 1.2 {
+      reached_end = true;
+      break;
+    }
+
+    let append_start = find_append_start(previous, &current)?;
+    if append_start >= current.height().saturating_sub(4) {
+      reached_end = true;
+      break;
+    }
+
+    frames.push((current, append_start));
+  }
+
+  if !reached_end {
+    return Err(format!(
+      "Long screenshot dihentikan setelah {LONG_CAPTURE_MAX_FRAMES} frame agar aplikasi tidak kehabisan memori. Halaman belum mencapai bagian bawah."
+    ));
+  }
+
+  let final_image = stitch_long_capture(&frames)?;
+  let (clipboard_copied, clipboard_error) = save_final_image(final_image, &file_path)?;
+
+  let capture = CaptureResult {
+    tc_name: current_tc_name.clone(),
+    tc_folder: tc_folder.to_string_lossy().to_string(),
+    step,
+    file_name,
+    file_path: file_path.to_string_lossy().to_string(),
+    timestamp: now_iso(),
+    clipboard_copied,
+    clipboard_error,
+  };
+
+  let mut metadata = load_or_init_metadata(parent, &current_tc_name);
+  metadata.status = "in_progress".to_string();
+  metadata.updated_at = now_iso();
+  metadata.screenshots.push(capture.clone());
+  write_json(&metadata_path(parent, &current_tc_name), &metadata)?;
+
+  let mut session = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: current_tc_name.clone(),
+    current_tc_folder: tc_folder.to_string_lossy().to_string(),
+    current_step: step,
+    status: "recording".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  session.current_tc_name = current_tc_name;
+  session.current_tc_folder = tc_folder.to_string_lossy().to_string();
+  session.current_step = step;
+  session.status = "recording".to_string();
+  let session_tc = session.current_tc_name.clone();
+  upsert_tc_item(&mut session, &session_tc, "in_progress");
+  save_session(&session)?;
+
+  Ok(capture)
+}
+
 #[tauri::command]
 fn capture_screenshot(
   window: tauri::Window,
@@ -987,6 +1327,29 @@ fn capture_screenshot(
   }
 
   let result = do_capture(parent_folder, current_tc_name, current_step, fullscreen_mode);
+
+  if hide_window {
+    let _ = window.show();
+    let _ = window.set_focus();
+  }
+
+  result
+}
+
+#[tauri::command]
+fn capture_long_screenshot(
+  window: tauri::Window,
+  parent_folder: String,
+  current_tc_name: String,
+  current_step: u32,
+  hide_window: bool,
+) -> Result<CaptureResult, String> {
+  if hide_window {
+    let _ = window.hide();
+    thread::sleep(Duration::from_millis(1_200));
+  }
+
+  let result = do_long_capture(parent_folder, current_tc_name, current_step);
 
   if hide_window {
     let _ = window.show();
@@ -1044,6 +1407,7 @@ fn main() {
     .setup(|app| {
       let shortcuts = [
         ("CommandOrControl+Shift+S", "shortcut-capture"),
+        ("CommandOrControl+Shift+A", "shortcut-capture-long"),
         ("CommandOrControl+Shift+N", "shortcut-next-tc"),
         ("CommandOrControl+Shift+P", "shortcut-mark-pending"),
         ("CommandOrControl+Shift+F", "shortcut-finish"),
@@ -1080,10 +1444,88 @@ fn main() {
       mark_pending,
       resume_tc,
       capture_screenshot,
+      capture_long_screenshot,
       finish_flow,
       open_path,
       get_shortcut_status
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use image::Rgba;
+
+  fn page_image(width: u32, height: u32) -> RgbaImage {
+    RgbaImage::from_fn(width, height, |x, y| {
+      let seed = x.wrapping_mul(73_856_093) ^ y.wrapping_mul(19_349_663);
+      Rgba([
+        (seed & 0xff) as u8,
+        ((seed >> 8) & 0xff) as u8,
+        ((seed >> 16) & 0xff) as u8,
+        255,
+      ])
+    })
+  }
+
+  #[test]
+  fn detects_overlap_and_stitches_regular_page() {
+    let page = page_image(120, 520);
+    let first = DynamicImage::ImageRgba8(image::imageops::crop_imm(&page, 0, 0, 120, 200).to_image());
+    let second =
+      DynamicImage::ImageRgba8(image::imageops::crop_imm(&page, 0, 160, 120, 200).to_image());
+    let third =
+      DynamicImage::ImageRgba8(image::imageops::crop_imm(&page, 0, 320, 120, 200).to_image());
+
+    let second_start = find_append_start(&first, &second).expect("overlap frame kedua");
+    let third_start = find_append_start(&second, &third).expect("overlap frame ketiga");
+    assert_eq!(second_start, 40);
+    assert_eq!(third_start, 40);
+
+    let stitched = stitch_long_capture(&[
+      (first, 0),
+      (second, second_start),
+      (third, third_start),
+    ])
+    .expect("stitch berhasil")
+    .to_rgba8();
+    assert_eq!(stitched.dimensions(), page.dimensions());
+    assert_eq!(stitched, page);
+  }
+
+  #[test]
+  fn ignores_repeated_sticky_header_when_matching() {
+    let width = 120;
+    let viewport_height = 200;
+    let header_height = 36;
+    let page = page_image(width, 400);
+    let header = image::imageops::crop_imm(&page, 0, 0, width, header_height).to_image();
+
+    let first = DynamicImage::ImageRgba8(
+      image::imageops::crop_imm(&page, 0, 0, width, viewport_height).to_image(),
+    );
+    let mut second = RgbaImage::new(width, viewport_height);
+    image::imageops::replace(&mut second, &header, 0, 0);
+    let second_content = image::imageops::crop_imm(
+      &page,
+      0,
+      176,
+      width,
+      viewport_height - header_height,
+    )
+    .to_image();
+    image::imageops::replace(&mut second, &second_content, 0, header_height as i64);
+    let second = DynamicImage::ImageRgba8(second);
+
+    let append_start = find_append_start(&first, &second).expect("overlap dengan sticky header");
+    assert_eq!(append_start, 60);
+  }
+
+  #[test]
+  fn sampled_difference_detects_identical_frames() {
+    let image = DynamicImage::ImageRgba8(page_image(100, 100));
+    assert_eq!(sampled_image_difference(&image, &image), Some(0.0));
+  }
 }
