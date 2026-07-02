@@ -96,6 +96,7 @@ struct CropRect {
 const LONG_CAPTURE_MAX_FRAMES: usize = 40;
 const LONG_CAPTURE_MAX_HEIGHT: u32 = 60_000;
 const LONG_CAPTURE_SCROLL_DELAY_MS: u64 = 650;
+const LONG_CAPTURE_BOTTOM_EDGE_IGNORE: u32 = 24;
 
 fn default_session_status() -> String {
   "idle".to_string()
@@ -619,6 +620,19 @@ fn save_captured_image(
   save_final_image(prepare_captured_image(image, fullscreen_mode), file_path)
 }
 
+fn prepare_long_viewport(image: DynamicImage) -> DynamicImage {
+  let image = prepare_captured_image(image, false);
+  let (width, height) = image.dimensions();
+
+  // Browser dapat memiliki horizontal scrollbar/status edge yang tetap di bawah viewport.
+  // Area statis ini harus dibuang agar tidak ikut berulang di tengah hasil stitching.
+  if height > 200 + LONG_CAPTURE_BOTTOM_EDGE_IGNORE {
+    image.crop_imm(0, 0, width, height - LONG_CAPTURE_BOTTOM_EDGE_IGNORE)
+  } else {
+    image
+  }
+}
+
 #[cfg(target_os = "macos")]
 fn capture_display_image(screen: &Screen, file_path: &Path) -> Result<image::DynamicImage, String> {
   use std::process::Command;
@@ -898,20 +912,113 @@ fn sampled_image_difference(first: &DynamicImage, second: &DynamicImage) -> Opti
   Some(difference as f64 / samples.max(1) as f64)
 }
 
-fn overlap_score(previous: &RgbaImage, current: &RgbaImage, current_start: u32, overlap: u32) -> f64 {
+fn moving_band_ranges(previous: &RgbaImage, current: &RgbaImage) -> Vec<(u32, u32)> {
   let width = previous.width();
+  let height = previous.height();
+  let band_count = 24_u32.min(width.max(1));
+  let band_width = (width / band_count).max(1);
+  let y_start = height / 10;
+  let y_end = height.saturating_sub(height / 10).max(y_start + 1);
+  let y_step = ((y_end - y_start) / 40).max(1) as usize;
+  let mut active_bands = Vec::new();
+
+  for band in 0..band_count {
+    let x_start = band * band_width;
+    let x_end = if band + 1 == band_count {
+      width
+    } else {
+      ((band + 1) * band_width).min(width)
+    };
+    let x_step = ((x_end.saturating_sub(x_start)) / 3).max(1) as usize;
+    let mut difference = 0_u64;
+    let mut samples = 0_u64;
+
+    for y in (y_start..y_end).step_by(y_step) {
+      for x in (x_start..x_end).step_by(x_step) {
+        let left = previous.get_pixel(x.min(width - 1), y).0;
+        let right = current.get_pixel(x.min(width - 1), y).0;
+        difference += left[0].abs_diff(right[0]) as u64;
+        difference += left[1].abs_diff(right[1]) as u64;
+        difference += left[2].abs_diff(right[2]) as u64;
+        samples += 3;
+      }
+    }
+
+    let score = difference as f64 / samples.max(1) as f64;
+    if score >= 4.0 {
+      active_bands.push((x_start, x_end));
+    }
+  }
+
+  active_bands
+}
+
+fn moving_content_bounds(previous: &DynamicImage, current: &DynamicImage) -> Option<(u32, u32)> {
+  if previous.dimensions() != current.dimensions() {
+    return None;
+  }
+
+  let previous = previous.to_rgba8();
+  let current = current.to_rgba8();
+  let width = previous.width();
+  let active_bands = moving_band_ranges(&previous, &current);
+  let first = active_bands.first()?.0;
+  let last = active_bands.last()?.1;
+  let band_padding = (width / 24).max(1);
+  let x = first.saturating_sub(band_padding);
+  let right = last.saturating_add(band_padding).min(width);
+  let crop_width = right.saturating_sub(x);
+
+  if crop_width >= width * 2 / 5 {
+    Some((x, crop_width))
+  } else {
+    None
+  }
+}
+
+fn crop_horizontal(image: DynamicImage, bounds: (u32, u32)) -> DynamicImage {
+  let (x, width) = bounds;
+  image.crop_imm(x, 0, width.min(image.width().saturating_sub(x)), image.height())
+}
+
+fn moving_sample_columns(previous: &RgbaImage, current: &RgbaImage) -> Vec<u32> {
+  let width = previous.width();
+  let active_bands = moving_band_ranges(previous, current);
+  let mut columns = Vec::new();
+  for (x_start, x_end) in active_bands {
+    let span = x_end.saturating_sub(x_start).max(1);
+    columns.push((x_start + span / 3).min(width - 1));
+    columns.push((x_start + span * 2 / 3).min(width - 1));
+  }
+
+  // Halaman yang sangat polos bisa menghasilkan sedikit band aktif. Dalam kondisi itu,
+  // gunakan area tengah konten, bukan sisi kiri/kanan yang biasanya berisi sidebar statis.
+  if columns.len() < 8 {
+    let x_start = width / 4;
+    let x_end = width.saturating_sub(width / 4).max(x_start + 1);
+    let x_step = ((x_end - x_start) / 16).max(1) as usize;
+    columns = (x_start..x_end).step_by(x_step).collect();
+  }
+
+  columns
+}
+
+fn overlap_score(
+  previous: &RgbaImage,
+  current: &RgbaImage,
+  columns: &[u32],
+  current_start: u32,
+  overlap: u32,
+) -> f64 {
   let previous_start = previous.height() - overlap;
-  let x_margin = width / 20;
-  let usable_width = width.saturating_sub(x_margin * 2).max(1);
-  let x_step = (usable_width / 32).max(1) as usize;
   let y_step = (overlap / 32).max(1) as usize;
   let mut difference = 0_u64;
   let mut samples = 0_u64;
 
   for relative_y in (0..overlap).step_by(y_step) {
-    for x in (x_margin..x_margin + usable_width).step_by(x_step) {
-      let left = previous.get_pixel(x.min(width - 1), previous_start + relative_y).0;
-      let right = current.get_pixel(x.min(width - 1), current_start + relative_y).0;
+    for &x in columns {
+      let left = previous.get_pixel(x, previous_start + relative_y).0;
+      let right = current.get_pixel(x, current_start + relative_y).0;
       difference += left[0].abs_diff(right[0]) as u64;
       difference += left[1].abs_diff(right[1]) as u64;
       difference += left[2].abs_diff(right[2]) as u64;
@@ -931,6 +1038,7 @@ fn find_append_start(previous: &DynamicImage, current: &DynamicImage) -> Result<
 
   let previous = previous.to_rgba8();
   let current = current.to_rgba8();
+  let columns = moving_sample_columns(&previous, &current);
   let height = previous.height();
   if height < 80 {
     return Err("Viewport terlalu pendek untuk digabungkan.".to_string());
@@ -947,7 +1055,7 @@ fn find_append_start(previous: &DynamicImage, current: &DynamicImage) -> Result<
     }
 
     for overlap in (min_overlap..=max_overlap).step_by(4) {
-      let score = overlap_score(&previous, &current, current_start, overlap);
+      let score = overlap_score(&previous, &current, &columns, current_start, overlap);
       let append_start = current_start + overlap;
       if best.map(|(best_score, _)| score < best_score).unwrap_or(true) {
         best = Some((score, append_start));
@@ -1297,18 +1405,24 @@ fn do_long_capture(
   send_scroll_key(ScrollKey::DocumentStart)?;
   thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
 
-  let first_image = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+  let first_image = prepare_long_viewport(capture_display_image(screen, &file_path)?);
   let mut frames = vec![(first_image, 0_u32)];
+  let mut content_bounds: Option<(u32, u32)> = None;
   let mut reached_end = false;
 
   for _ in 1..LONG_CAPTURE_MAX_FRAMES {
     send_scroll_key(ScrollKey::PageDown)?;
     thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
 
-    let mut current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
-    let previous = &frames.last().expect("frame pertama selalu tersedia").0;
-    let mut difference = sampled_image_difference(previous, &current)
-      .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
+    let mut current = prepare_long_viewport(capture_display_image(screen, &file_path)?);
+    if let Some(bounds) = content_bounds {
+      current = crop_horizontal(current, bounds);
+    }
+    let mut difference = sampled_image_difference(
+      &frames.last().expect("frame pertama selalu tersedia").0,
+      &current,
+    )
+    .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
 
     // Page Down bisa tidak bereaksi ketika fokus browser berada pada input/komponen tertentu.
     // Coba scroll wheel/down-arrow sebagai fallback sebelum menyimpulkan halaman sudah selesai.
@@ -1316,9 +1430,15 @@ fn do_long_capture(
       release_capture_shortcut_keys()?;
       send_scroll_key(ScrollKey::FallbackDown)?;
       thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
-      current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
-      difference = sampled_image_difference(previous, &current)
-        .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
+      current = prepare_long_viewport(capture_display_image(screen, &file_path)?);
+      if let Some(bounds) = content_bounds {
+        current = crop_horizontal(current, bounds);
+      }
+      difference = sampled_image_difference(
+        &frames.last().expect("frame pertama selalu tersedia").0,
+        &current,
+      )
+      .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
 
       if difference <= 1.2 {
         return Err(
@@ -1328,14 +1448,38 @@ fn do_long_capture(
       }
     }
 
+    if difference > 1.2 && content_bounds.is_none() {
+      let previous = &frames.last().expect("frame pertama selalu tersedia").0;
+      let detected_bounds =
+        moving_content_bounds(previous, &current).unwrap_or((0, current.width()));
+      content_bounds = Some(detected_bounds);
+
+      if detected_bounds.0 > 0 || detected_bounds.1 < current.width() {
+        let cropped_previous = crop_horizontal(previous.clone(), detected_bounds);
+        frames.last_mut().expect("frame pertama selalu tersedia").0 = cropped_previous;
+        current = crop_horizontal(current, detected_bounds);
+        difference = sampled_image_difference(
+          &frames.last().expect("frame pertama selalu tersedia").0,
+          &current,
+        )
+        .ok_or_else(|| "Ukuran region konten berubah saat long screenshot berjalan.".to_string())?;
+      }
+    }
+
     if difference <= 1.2 {
       // Pastikan frame tidak berhenti berubah karena fokus scroll hilang. Ctrl/Cmd+End harus
       // tetap menghasilkan frame yang sama jika posisi memang sudah mentok di bawah.
       send_scroll_key(ScrollKey::DocumentEnd)?;
       thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
-      let end_check = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
-      let end_difference = sampled_image_difference(previous, &end_check)
-        .ok_or_else(|| "Ukuran viewport berubah saat memverifikasi akhir halaman.".to_string())?;
+      let mut end_check = prepare_long_viewport(capture_display_image(screen, &file_path)?);
+      if let Some(bounds) = content_bounds {
+        end_check = crop_horizontal(end_check, bounds);
+      }
+      let end_difference = sampled_image_difference(
+        &frames.last().expect("frame pertama selalu tersedia").0,
+        &end_check,
+      )
+      .ok_or_else(|| "Ukuran viewport berubah saat memverifikasi akhir halaman.".to_string())?;
       if end_difference > 1.2 {
         return Err(
           "Scroll otomatis berhenti sebelum mencapai bagian bawah. Hasil tidak disimpan agar evidence tidak terpotong."
@@ -1346,6 +1490,7 @@ fn do_long_capture(
       break;
     }
 
+    let previous = &frames.last().expect("frame pertama selalu tersedia").0;
     let append_start = find_append_start(previous, &current)?;
     if append_start >= current.height().saturating_sub(4) {
       return Err(
@@ -1622,6 +1767,81 @@ mod tests {
 
     let append_start = find_append_start(&first, &second).expect("overlap dengan sticky header");
     assert_eq!(append_start, 60);
+  }
+
+  #[test]
+  fn ignores_static_sidebar_when_matching_scrolled_content() {
+    let width = 240;
+    let viewport_height = 200;
+    let sidebar_width = 72;
+    let page = page_image(width, 400);
+    let first =
+      image::imageops::crop_imm(&page, 0, 0, width, viewport_height).to_image();
+    let mut second =
+      image::imageops::crop_imm(&page, 0, 160, width, viewport_height).to_image();
+    let static_sidebar =
+      image::imageops::crop_imm(&first, 0, 0, sidebar_width, viewport_height).to_image();
+    image::imageops::replace(&mut second, &static_sidebar, 0, 0);
+
+    let bounds = moving_content_bounds(
+      &DynamicImage::ImageRgba8(first.clone()),
+      &DynamicImage::ImageRgba8(second.clone()),
+    )
+    .expect("region konten bergerak");
+    assert!(bounds.0 > 0);
+    assert!(bounds.1 < width);
+    assert!(bounds.0 <= sidebar_width);
+
+    let append_start = find_append_start(
+      &DynamicImage::ImageRgba8(first),
+      &DynamicImage::ImageRgba8(second),
+    )
+    .expect("overlap dengan sidebar statis");
+    assert_eq!(append_start, 40);
+  }
+
+  #[test]
+  fn stitched_output_crops_static_sidebar() {
+    let width = 240;
+    let viewport_height = 200;
+    let sidebar_width = 72;
+    let page = page_image(width, 360);
+    let first =
+      image::imageops::crop_imm(&page, 0, 0, width, viewport_height).to_image();
+    let mut second =
+      image::imageops::crop_imm(&page, 0, 160, width, viewport_height).to_image();
+    let static_sidebar =
+      image::imageops::crop_imm(&first, 0, 0, sidebar_width, viewport_height).to_image();
+    image::imageops::replace(&mut second, &static_sidebar, 0, 0);
+    let first = DynamicImage::ImageRgba8(first);
+    let second = DynamicImage::ImageRgba8(second);
+    let bounds = moving_content_bounds(&first, &second).expect("region konten bergerak");
+    let cropped_first = crop_horizontal(first, bounds);
+    let cropped_second = crop_horizontal(second, bounds);
+
+    let stitched = stitch_long_capture(&[
+      (cropped_first, 0),
+      (cropped_second, 40),
+    ])
+    .expect("stitch dengan sidebar statis");
+
+    assert!(stitched.width() < width);
+    assert!(stitched.width() > width - sidebar_width - 24);
+    assert_eq!(stitched.height(), 360);
+  }
+
+  #[test]
+  fn long_viewport_removes_fixed_bottom_edge() {
+    let image = DynamicImage::ImageRgba8(page_image(120, 600));
+    let browser_area = prepare_captured_image(image.clone(), false);
+    let prepared = prepare_long_viewport(image);
+    assert_eq!(
+      prepared.dimensions(),
+      (
+        browser_area.width(),
+        browser_area.height() - LONG_CAPTURE_BOTTOM_EDGE_IGNORE,
+      )
+    );
   }
 
   #[test]
