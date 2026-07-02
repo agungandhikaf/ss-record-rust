@@ -720,8 +720,43 @@ fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRec
 #[derive(Clone, Copy)]
 enum ScrollKey {
   DocumentStart,
+  DocumentEnd,
   PageDown,
   FallbackDown,
+}
+
+#[cfg(target_os = "windows")]
+fn release_capture_shortcut_keys() -> Result<(), String> {
+  use std::mem::{size_of, zeroed};
+  use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_CONTROL, VK_SHIFT,
+  };
+
+  unsafe {
+    let mut inputs: [INPUT; 3] = zeroed();
+    for (input, virtual_key) in inputs
+      .iter_mut()
+      .zip([VK_SHIFT, VK_CONTROL, 0x41_u16])
+    {
+      input.r#type = INPUT_KEYBOARD;
+      input.Anonymous.ki.wVk = virtual_key;
+      input.Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+    }
+
+    let sent = SendInput(3, inputs.as_ptr(), size_of::<INPUT>() as i32);
+    if sent != 3 {
+      return Err("Gagal melepas tombol shortcut sebelum long screenshot.".to_string());
+    }
+  }
+
+  Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn release_capture_shortcut_keys() -> Result<(), String> {
+  // macOS membutuhkan sedikit waktu agar Command+Shift+A fisik dilepas user.
+  thread::sleep(Duration::from_millis(350));
+  Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -743,6 +778,20 @@ fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
         inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
         inputs[2].r#type = INPUT_KEYBOARD;
         inputs[2].Anonymous.ki.wVk = VK_HOME;
+        inputs[2].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
+        inputs[3].r#type = INPUT_KEYBOARD;
+        inputs[3].Anonymous.ki.wVk = VK_CONTROL;
+        inputs[3].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+        4
+      }
+      ScrollKey::DocumentEnd => {
+        inputs[0].r#type = INPUT_KEYBOARD;
+        inputs[0].Anonymous.ki.wVk = VK_CONTROL;
+        inputs[1].r#type = INPUT_KEYBOARD;
+        inputs[1].Anonymous.ki.wVk = windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_END;
+        inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
+        inputs[2].r#type = INPUT_KEYBOARD;
+        inputs[2].Anonymous.ki.wVk = windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_END;
         inputs[2].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
         inputs[3].r#type = INPUT_KEYBOARD;
         inputs[3].Anonymous.ki.wVk = VK_CONTROL;
@@ -788,6 +837,9 @@ fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
       r#"tell application "System Events" to key code 126 using command down"#
     }
     ScrollKey::PageDown => r#"tell application "System Events" to key code 121"#,
+    ScrollKey::DocumentEnd => {
+      r#"tell application "System Events" to key code 125 using command down"#
+    }
     ScrollKey::FallbackDown => {
       r#"tell application "System Events"
         repeat 16 times
@@ -1240,7 +1292,8 @@ fn do_long_capture(
   let screen = screens.first().ok_or_else(|| "Tidak ada layar yang bisa dibaca.".to_string())?;
 
   // Beri waktu agar tombol shortcut fisik sudah dilepas sebelum mengirim Ctrl/Cmd+Home.
-  thread::sleep(Duration::from_millis(350));
+  thread::sleep(Duration::from_millis(650));
+  release_capture_shortcut_keys()?;
   send_scroll_key(ScrollKey::DocumentStart)?;
   thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
 
@@ -1260,6 +1313,7 @@ fn do_long_capture(
     // Page Down bisa tidak bereaksi ketika fokus browser berada pada input/komponen tertentu.
     // Coba scroll wheel/down-arrow sebagai fallback sebelum menyimpulkan halaman sudah selesai.
     if difference <= 1.2 && frames.len() == 1 {
+      release_capture_shortcut_keys()?;
       send_scroll_key(ScrollKey::FallbackDown)?;
       thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
       current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
@@ -1275,14 +1329,29 @@ fn do_long_capture(
     }
 
     if difference <= 1.2 {
+      // Pastikan frame tidak berhenti berubah karena fokus scroll hilang. Ctrl/Cmd+End harus
+      // tetap menghasilkan frame yang sama jika posisi memang sudah mentok di bawah.
+      send_scroll_key(ScrollKey::DocumentEnd)?;
+      thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
+      let end_check = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+      let end_difference = sampled_image_difference(previous, &end_check)
+        .ok_or_else(|| "Ukuran viewport berubah saat memverifikasi akhir halaman.".to_string())?;
+      if end_difference > 1.2 {
+        return Err(
+          "Scroll otomatis berhenti sebelum mencapai bagian bawah. Hasil tidak disimpan agar evidence tidak terpotong."
+            .to_string(),
+        );
+      }
       reached_end = true;
       break;
     }
 
     let append_start = find_append_start(previous, &current)?;
     if append_start >= current.height().saturating_sub(4) {
-      reached_end = true;
-      break;
+      return Err(
+        "Overlap frame terlalu ambigu. Hasil tidak disimpan agar long screenshot tidak terpotong."
+          .to_string(),
+      );
     }
 
     frames.push((current, append_start));
