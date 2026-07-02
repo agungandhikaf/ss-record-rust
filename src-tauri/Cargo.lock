@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "mytbc-tauri"
-version = "1.0.14"
+version = "1.0.15"
 dependencies = [
  "arboard",
  "chrono",

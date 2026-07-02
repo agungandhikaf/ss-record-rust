@@ -99,6 +99,7 @@ Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas y
 
 - Long Capture didukung di Windows dan macOS untuk halaman browser dengan scroll vertikal utama.
 - Proses dimulai dari bagian atas halaman dan berhenti otomatis ketika viewport tidak berubah lagi.
+- Jalankan shortcut ketika browser target aktif dan pointer berada di area halaman.
 - Jangan scroll, mengetik, memindahkan window, atau menggerakkan fokus selama proses berlangsung.
 - macOS memerlukan izin **Accessibility** dan **Screen Recording** untuk MyTBC.
 - Sticky header sederhana ditangani saat stitching. Halaman dengan animasi terus-menerus, infinite scroll, atau nested scroll dapat dihentikan jika overlap tidak aman.

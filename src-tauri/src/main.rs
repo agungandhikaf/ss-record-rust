@@ -721,14 +721,15 @@ fn calculate_browser_crop(image_width: u32, image_height: u32) -> Option<CropRec
 enum ScrollKey {
   DocumentStart,
   PageDown,
+  FallbackDown,
 }
 
 #[cfg(target_os = "windows")]
 fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
   use std::mem::{size_of, zeroed};
   use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_CONTROL, VK_HOME,
-    VK_NEXT,
+    SendInput, INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+    MOUSEEVENTF_WHEEL, VK_CONTROL, VK_HOME, VK_NEXT,
   };
 
   unsafe {
@@ -757,6 +758,12 @@ fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
         inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
         2
       }
+      ScrollKey::FallbackDown => {
+        inputs[0].r#type = INPUT_MOUSE;
+        inputs[0].Anonymous.mi.mouseData = (-960_i32) as u32;
+        inputs[0].Anonymous.mi.dwFlags = MOUSEEVENTF_WHEEL;
+        1
+      }
     };
 
     let sent = SendInput(
@@ -781,6 +788,14 @@ fn send_scroll_key(key: ScrollKey) -> Result<(), String> {
       r#"tell application "System Events" to key code 126 using command down"#
     }
     ScrollKey::PageDown => r#"tell application "System Events" to key code 121"#,
+    ScrollKey::FallbackDown => {
+      r#"tell application "System Events"
+        repeat 16 times
+          key code 125
+          delay 0.01
+        end repeat
+      end tell"#
+    }
   };
 
   let output = Command::new("osascript")
@@ -1237,10 +1252,27 @@ fn do_long_capture(
     send_scroll_key(ScrollKey::PageDown)?;
     thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
 
-    let current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+    let mut current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
     let previous = &frames.last().expect("frame pertama selalu tersedia").0;
-    let difference = sampled_image_difference(previous, &current)
+    let mut difference = sampled_image_difference(previous, &current)
       .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
+
+    // Page Down bisa tidak bereaksi ketika fokus browser berada pada input/komponen tertentu.
+    // Coba scroll wheel/down-arrow sebagai fallback sebelum menyimpulkan halaman sudah selesai.
+    if difference <= 1.2 && frames.len() == 1 {
+      send_scroll_key(ScrollKey::FallbackDown)?;
+      thread::sleep(Duration::from_millis(LONG_CAPTURE_SCROLL_DELAY_MS));
+      current = prepare_captured_image(capture_display_image(screen, &file_path)?, false);
+      difference = sampled_image_difference(previous, &current)
+        .ok_or_else(|| "Ukuran viewport berubah saat long screenshot berjalan.".to_string())?;
+
+      if difference <= 1.2 {
+        return Err(
+          "Scroll otomatis tidak menggerakkan halaman. Pastikan pointer/fokus berada di area halaman browser, lalu jalankan shortcut Long Capture dari browser."
+            .to_string(),
+        );
+      }
+    }
 
     if difference <= 1.2 {
       reached_end = true;
