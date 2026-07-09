@@ -291,6 +291,7 @@ h2 {
 .primary-btn,
 .secondary-btn,
 .capture-btn,
+.dual-window-capture-btn,
 .long-capture-btn,
 .fullscreen-capture-btn,
 .danger-btn,
@@ -351,6 +352,12 @@ h2 {
   font-weight: 900;
 }
 
+.dual-window-capture-btn {
+  color: #166534;
+  background: #dcfce7;
+  font-weight: 900;
+}
+
 .long-capture-btn {
   color: #075985;
   background: #e0f2fe;
@@ -365,6 +372,11 @@ h2 {
 .fullscreen-capture-btn:hover {
   color: #fff;
   background: #4f46e5;
+}
+
+.dual-window-capture-btn:hover {
+  color: #fff;
+  background: #16a34a;
 }
 
 .danger-btn {

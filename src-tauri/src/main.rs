@@ -97,6 +97,8 @@ const LONG_CAPTURE_MAX_FRAMES: usize = 40;
 const LONG_CAPTURE_MAX_HEIGHT: u32 = 60_000;
 const LONG_CAPTURE_SCROLL_DELAY_MS: u64 = 650;
 const LONG_CAPTURE_BOTTOM_EDGE_IGNORE: u32 = 24;
+const DUAL_WINDOW_TOP_EDGE_IGNORE: u32 = 36;
+const DUAL_WINDOW_BOTTOM_EDGE_IGNORE: u32 = 48;
 
 fn default_session_status() -> String {
   "idle".to_string()
@@ -481,6 +483,36 @@ fn active_window_bounds() -> Option<(i32, i32, i32, i32)> {
   None
 }
 
+#[cfg(target_os = "windows")]
+fn desktop_work_area_bounds() -> Option<(i32, i32, i32, i32)> {
+  use windows_sys::Win32::Foundation::RECT;
+  use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+
+  unsafe {
+    let mut rect = RECT {
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+    };
+
+    if SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut rect as *mut RECT as *mut _, 0) == 0 {
+      return None;
+    }
+
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+      return None;
+    }
+
+    Some((rect.left, rect.top, rect.right, rect.bottom))
+  }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn desktop_work_area_bounds() -> Option<(i32, i32, i32, i32)> {
+  None
+}
+
 fn browser_crop_insets() -> (u32, u32) {
   // Mode Browser Area:
   // - Windows: crop dari area address/search bar pada window aktif. Taskbar tidak ikut karena yang dicrop adalah window aktif.
@@ -494,6 +526,43 @@ fn browser_crop_insets() -> (u32, u32) {
   } else {
     (52, 0)
   }
+}
+
+fn calculate_dual_window_crop(image_width: u32, image_height: u32) -> Option<CropRect> {
+  if let Some((left, top, right, bottom)) = desktop_work_area_bounds() {
+    let x = left.max(0) as u32;
+    let y = top.max(0) as u32 + DUAL_WINDOW_TOP_EDGE_IGNORE;
+    let right = right.max(0) as u32;
+    let bottom = bottom.max(0) as u32;
+    let width = right.saturating_sub(x);
+    let height = bottom.saturating_sub(y);
+
+    return clamp_crop_rect(
+      CropRect {
+        x,
+        y,
+        width,
+        height,
+      },
+      image_width,
+      image_height,
+    );
+  }
+
+  let y = DUAL_WINDOW_TOP_EDGE_IGNORE.min(image_height.saturating_sub(1));
+  let height = image_height
+    .saturating_sub(y)
+    .saturating_sub(DUAL_WINDOW_BOTTOM_EDGE_IGNORE);
+  clamp_crop_rect(
+    CropRect {
+      x: 0,
+      y,
+      width: image_width,
+      height,
+    },
+    image_width,
+    image_height,
+  )
 }
 
 fn clamp_crop_rect(rect: CropRect, image_width: u32, image_height: u32) -> Option<CropRect> {
@@ -593,6 +662,15 @@ fn prepare_captured_image(image: DynamicImage, fullscreen_mode: bool) -> Dynamic
   if fullscreen_mode {
     image
   } else if let Some(crop) = calculate_browser_crop(image_width, image_height) {
+    image.crop_imm(crop.x, crop.y, crop.width, crop.height)
+  } else {
+    image
+  }
+}
+
+fn prepare_dual_window_image(image: DynamicImage) -> DynamicImage {
+  let (image_width, image_height) = image.dimensions();
+  if let Some(crop) = calculate_dual_window_crop(image_width, image_height) {
     image.crop_imm(crop.x, crop.y, crop.width, crop.height)
   } else {
     image
@@ -1372,6 +1450,74 @@ fn do_capture(
   Ok(capture)
 }
 
+fn do_dual_window_capture(
+  parent_folder: String,
+  current_tc_name: String,
+  current_step: u32,
+) -> Result<CaptureResult, String> {
+  if parent_folder.trim().is_empty() {
+    return Err("Parent folder belum dipilih.".to_string());
+  }
+
+  if current_tc_name.trim().is_empty() {
+    return Err("Flow belum dimulai. Klik Start / Resume Flow dulu.".to_string());
+  }
+
+  let parent = Path::new(&parent_folder);
+  let tc_folder = parent.join(&current_tc_name);
+  fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
+
+  let _ = current_step;
+  let step = screenshot_sequence_base(&tc_folder) + 1;
+  let timestamp_for_file = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
+  let unique_id = Uuid::new_v4().simple().to_string()[0..4].to_string();
+  let file_name = format!("{:03}_{}_{}_dual.png", step, timestamp_for_file, unique_id);
+  let file_path = tc_folder.join(&file_name);
+
+  let screens = Screen::all().map_err(|e| format!("Gagal membaca layar: {e}"))?;
+  let screen = screens.first().ok_or_else(|| "Tidak ada layar yang bisa dibaca.".to_string())?;
+
+  let image = capture_display_image(screen, &file_path)?;
+  let (clipboard_copied, clipboard_error) =
+    save_final_image(prepare_dual_window_image(image), &file_path)?;
+
+  let capture = CaptureResult {
+    tc_name: current_tc_name.clone(),
+    tc_folder: tc_folder.to_string_lossy().to_string(),
+    step,
+    file_name,
+    file_path: file_path.to_string_lossy().to_string(),
+    timestamp: now_iso(),
+    clipboard_copied,
+    clipboard_error,
+  };
+
+  let mut metadata = load_or_init_metadata(parent, &current_tc_name);
+  metadata.status = "in_progress".to_string();
+  metadata.updated_at = now_iso();
+  metadata.screenshots.push(capture.clone());
+  write_json(&metadata_path(parent, &current_tc_name), &metadata)?;
+
+  let mut session = read_session_file(parent).unwrap_or(SessionState {
+    parent_folder: parent_folder.clone(),
+    current_tc_name: current_tc_name.clone(),
+    current_tc_folder: tc_folder.to_string_lossy().to_string(),
+    current_step: step,
+    status: "recording".to_string(),
+    tc_list: Vec::new(),
+  });
+
+  session.current_tc_name = current_tc_name;
+  session.current_tc_folder = tc_folder.to_string_lossy().to_string();
+  session.current_step = step;
+  session.status = "recording".to_string();
+  let session_tc = session.current_tc_name.clone();
+  upsert_tc_item(&mut session, &session_tc, "in_progress");
+  save_session(&session)?;
+
+  Ok(capture)
+}
+
 fn do_long_capture(
   parent_folder: String,
   current_tc_name: String,
@@ -1583,6 +1729,29 @@ fn capture_screenshot(
 }
 
 #[tauri::command]
+fn capture_dual_window_screenshot(
+  window: tauri::Window,
+  parent_folder: String,
+  current_tc_name: String,
+  current_step: u32,
+  hide_window: bool,
+) -> Result<CaptureResult, String> {
+  if hide_window {
+    let _ = window.hide();
+    thread::sleep(Duration::from_millis(650));
+  }
+
+  let result = do_dual_window_capture(parent_folder, current_tc_name, current_step);
+
+  if hide_window {
+    let _ = window.show();
+    let _ = window.set_focus();
+  }
+
+  result
+}
+
+#[tauri::command]
 fn capture_long_screenshot(
   window: tauri::Window,
   parent_folder: String,
@@ -1654,6 +1823,7 @@ fn main() {
       let shortcuts = [
         ("CommandOrControl+Shift+S", "shortcut-capture"),
         ("CommandOrControl+Shift+A", "shortcut-capture-long"),
+        ("CommandOrControl+Shift+D", "shortcut-capture-dual-window"),
         ("CommandOrControl+Shift+N", "shortcut-next-tc"),
         ("CommandOrControl+Shift+P", "shortcut-mark-pending"),
         ("CommandOrControl+Shift+F", "shortcut-finish"),
@@ -1690,6 +1860,7 @@ fn main() {
       mark_pending,
       resume_tc,
       capture_screenshot,
+      capture_dual_window_screenshot,
       capture_long_screenshot,
       finish_flow,
       open_path,

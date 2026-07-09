@@ -16,6 +16,7 @@ const elements = {
   chooseFolderBtn: document.querySelector('#chooseFolderBtn'),
   startBtn: document.querySelector('#startBtn'),
   captureBtn: document.querySelector('#captureBtn'),
+  captureDualWindowBtn: document.querySelector('#captureDualWindowBtn'),
   captureLongBtn: document.querySelector('#captureLongBtn'),
   captureFullscreenBtn: document.querySelector('#captureFullscreenBtn'),
   nextTcBtn: document.querySelector('#nextTcBtn'),
@@ -26,6 +27,7 @@ const elements = {
   openTcBtn: document.querySelector('#openTcBtn'),
   tcList: document.querySelector('#tcList'),
   captureShortcut: document.querySelector('#captureShortcut'),
+  dualWindowCaptureShortcut: document.querySelector('#dualWindowCaptureShortcut'),
   longCaptureShortcut: document.querySelector('#longCaptureShortcut'),
   nextTcShortcut: document.querySelector('#nextTcShortcut'),
   pendingShortcut: document.querySelector('#pendingShortcut'),
@@ -59,6 +61,7 @@ let state = {
   lastCapture: null,
   shortcuts: {
     capture: isMac ? '⌘ + Shift + S' : 'Ctrl + Shift + S',
+    dualWindowCapture: isMac ? '⌘ + Shift + D' : 'Ctrl + Shift + D',
     longCapture: isMac ? '⌘ + Shift + A' : 'Ctrl + Shift + A',
     nextTc: isMac ? '⌘ + Shift + N' : 'Ctrl + Shift + N',
     pending: isMac ? '⌘ + Shift + P' : 'Ctrl + Shift + P',
@@ -104,6 +107,7 @@ function allButtons() {
     elements.chooseFolderBtn,
     elements.startBtn,
     elements.captureBtn,
+    elements.captureDualWindowBtn,
     elements.captureLongBtn,
     elements.captureFullscreenBtn,
     elements.nextTcBtn,
@@ -419,6 +423,7 @@ function render() {
   elements.startBtn.dataset.flowState = flowUi.key;
 
   elements.captureShortcut.textContent = state.shortcuts.capture;
+  elements.dualWindowCaptureShortcut.textContent = state.shortcuts.dualWindowCapture;
   elements.longCaptureShortcut.textContent = state.shortcuts.longCapture;
   elements.nextTcShortcut.textContent = state.shortcuts.nextTc;
   elements.pendingShortcut.textContent = state.shortcuts.pending;
@@ -463,6 +468,7 @@ function render() {
     const isRecording = state.status === 'recording';
     elements.startBtn.disabled = flowUi.startDisabled;
     elements.captureBtn.disabled = !isRecording;
+    elements.captureDualWindowBtn.disabled = !isRecording;
     elements.captureLongBtn.disabled = !isRecording;
     elements.captureFullscreenBtn.disabled = !isRecording;
     elements.nextTcBtn.disabled = !isRecording;
@@ -614,6 +620,39 @@ async function captureFullscreenScreenshot() {
     fullscreenMode: true,
     captureDelayMs: FULLSCREEN_CAPTURE_DELAY_MS
   });
+}
+
+async function captureDualWindowScreenshot(hideWindow = false) {
+  if (!state.parentFolder || state.status !== 'recording') return;
+
+  const capture = await invoke('capture_dual_window_screenshot', {
+    parentFolder: state.parentFolder,
+    currentTcName: state.currentTcName,
+    currentStep: state.currentStep,
+    hideWindow
+  });
+
+  state = {
+    ...state,
+    currentStep: capture.step,
+    currentTcName: capture.tcName,
+    currentTcFolder: capture.tcFolder,
+    status: 'recording',
+    lastCapture: capture
+  };
+
+  const restored = await invoke('read_session', { parentFolder: state.parentFolder });
+  state = { ...state, ...restored, lastCapture: capture };
+  render();
+
+  if (capture.clipboardCopied) {
+    showToast(`Dual-window screenshot tersimpan & masuk clipboard: ${capture.fileName}`);
+  } else if (capture.clipboardError) {
+    showToast(`Dual-window screenshot tersimpan, tapi clipboard gagal. ${capture.fileName}`);
+  } else {
+    showToast(`Dual-window screenshot tersimpan: ${capture.fileName}`);
+  }
+  await notifyUser('Dual-window screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
 }
 
 async function captureLongScreenshot(hideWindow = false) {
@@ -780,6 +819,7 @@ function registerButtonHandlers() {
 
   // Capture dari tombol akan hide window sebentar supaya UI aplikasi tidak ikut masuk screenshot.
   elements.captureBtn.addEventListener('click', () => runAction(() => captureScreenshot(true)));
+  elements.captureDualWindowBtn.addEventListener('click', () => runAction(() => captureDualWindowScreenshot(true)));
   elements.captureLongBtn.addEventListener('click', () => runAction(() => captureLongScreenshot(true)));
   elements.captureFullscreenBtn.addEventListener('click', () => runAction(() => captureFullscreenScreenshot()));
 
@@ -802,6 +842,7 @@ function registerButtonHandlers() {
 
 async function registerShortcutListeners() {
   await listen('shortcut-capture', () => runAction(() => captureScreenshot(false)));
+  await listen('shortcut-capture-dual-window', () => runAction(() => captureDualWindowScreenshot(false)));
   await listen('shortcut-capture-long', () => runAction(() => captureLongScreenshot(false)));
   await listen('shortcut-next-tc', () => runAction(nextTc));
   await listen('shortcut-mark-pending', () => runAction(markPending));

@@ -7,6 +7,7 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 - Pilih parent folder saja.
 - Auto create folder `TC001`, `TC002`, `TC003`, dst.
 - Screenshot manual via tombol atau shortcut.
+- Dual-window screenshot untuk dua window berdampingan dalam satu layar tanpa taskbar bawah.
 - Long screenshot halaman browser: scroll otomatis, deteksi overlap, lalu gabungkan menjadi satu PNG.
 - Mode screenshot **Browser Area**:
   - Windows: crop dari area address/search bar pada window aktif sehingga taskbar tidak ikut.
@@ -21,12 +22,14 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 ## Shortcut
 
 - Windows/Linux: `Ctrl + Shift + S` = Capture
+- Windows/Linux: `Ctrl + Shift + D` = Dual Window Capture
 - Windows: `Ctrl + Shift + A` = Long Capture
 - Windows/Linux: `Ctrl + Shift + N` = Next TC
 - Windows/Linux: `Ctrl + Shift + P` = Mark Pending
 - Windows/Linux: `Ctrl + Shift + F` = Finish
 
 - Mac: `Command + Shift + S` = Capture
+- Mac: `Command + Shift + D` = Dual Window Capture
 - Mac: `Command + Shift + A` = Long Capture
 - Mac: `Command + Shift + N` = Next TC
 - Mac: `Command + Shift + P` = Mark Pending
@@ -94,6 +97,12 @@ fn browser_crop_insets() -> (u32, u32)
 ```
 
 Nilai pertama adalah crop atas. Makin besar nilainya, makin banyak bagian atas yang dipotong.
+
+Mode Dual Window mengambil layar utama, memakai work area OS di Windows agar taskbar tidak ikut, lalu membuang strip atas default. Kalau hasil dual-window masih terlalu banyak/sedikit memotong bagian atas, ubah konstanta:
+
+```rust
+const DUAL_WINDOW_TOP_EDGE_IGNORE: u32 = 36;
+```
 
 ## Catatan long screenshot
 
