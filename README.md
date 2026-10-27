@@ -22,6 +22,7 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 ## Shortcut
 
 - Windows/Linux: `Ctrl + Shift + S` = Capture
+- Windows/Linux: `Ctrl + Shift + M` = Capture + Mark
 - Windows/Linux: `Ctrl + Shift + D` = Dual Window Capture
 - Windows: `Ctrl + Shift + A` = Long Capture
 - Windows/Linux: `Ctrl + Shift + N` = Next TC
@@ -29,6 +30,7 @@ Aplikasi desktop ringan untuk membuat evidence screenshot per test case.
 - Windows/Linux: `Ctrl + Shift + F` = Finish
 
 - Mac: `Command + Shift + S` = Capture
+- Mac: `Command + Shift + M` = Capture + Mark
 - Mac: `Command + Shift + D` = Dual Window Capture
 - Mac: `Command + Shift + A` = Long Capture
 - Mac: `Command + Shift + N` = Next TC
@@ -174,3 +176,12 @@ Catatan migrasi: karena nama aplikasi dan identifier berubah, Windows/macOS bisa
 - `captions.txt` dibuat saat TC dibuat serta diselaraskan ketika session dibaca, TC di-resume, dan setiap screenshot berhasil disimpan. Format: `1.`, baris kosong, `2.`, dst, mengikuti jumlah PNG. Nomor yang belum ada ditambahkan; **isi keterangan yang sudah diketik pengguna tidak ditimpa dan tidak dihapus**. Jika PNG dihapus manual, nomor lama dibiarkan agar catatan pengguna tidak hilang; edit manual jika penomoran perlu dirapikan.
 - File yang berubah: `index.html`, `src/main.js`, `src/styles.css`, `src-tauri/src/main.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `README.md`.
 - Verifikasi yang diperlukan di macOS/Windows: compile `npm run dev`, izin Screen Recording macOS, shortcut global ketika browser fokus, gambar rectangle/undo/redo, Enter/Esc, clipboard, count dan isi captions untuk semua mode capture, serta regresi flow dan long capture.
+
+
+## Pembaruan lanjutan: auto-focus editor mark + refresh icon aplikasi (2026-10-27)
+
+- **Fix UX Capture + Mark**: saat shortcut **Ctrl/Command + Shift + M** ditekan dari aplikasi lain, MyTBC kini **mengambil screenshot lebih dulu**, lalu otomatis memunculkan window aplikasi ke depan dan fokus ke editor mark. Dengan alur ini, screenshot target tidak tertangkap bersama window MyTBC, dan user **tidak perlu klik aplikasi dulu** untuk mulai menggambar kotak merah.
+- Saat editor mark ditutup lewat **Enter** atau **Esc**, mode `always on top` pada window dilepas kembali agar perilaku window normal.
+- **Refresh icon aplikasi**: aset icon bundle diganti agar tampilan MyTBC lebih modern dan lebih selaras dengan fungsi screenshot evidence + rectangle marking. File icon yang diperbarui: `src-tauri/icons/32x32.png`, `src-tauri/icons/128x128.png`, `src-tauri/icons/128x128@2x.png`, `src-tauri/icons/icon.ico`, `src-tauri/icons/icon.icns`.
+- File kode yang berubah untuk fixing ini: `src/main.js`, `src-tauri/src/main.rs`, `README.md`, dan seluruh file icon di `src-tauri/icons/`.
+- Verifikasi yang disarankan: tekan shortcut Capture + Mark saat browser aktif (tanpa klik MyTBC), pastikan editor langsung tampil fokus; uji **Esc**, **Enter**, **Undo/Redo**, clipboard, penomoran screenshot, serta pastikan icon baru muncul saat aplikasi di-run/build ulang.

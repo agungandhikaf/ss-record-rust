@@ -658,8 +658,13 @@ async function beginMarkCapture(hideWindow = false) {
   elements.markCanvas.width = img.naturalWidth;
   elements.markCanvas.height = img.naturalHeight;
   markActive = true;
-  elements.markEditor.classList.remove('hidden');
   redrawMarks();
+  elements.markEditor.classList.remove('hidden');
+  try {
+    await invoke('present_mark_editor_window');
+  } catch (_) {
+    // Fallback: editor tetap dibuka walau window tidak bisa dipaksa fokus.
+  }
   elements.markSaveBtn.focus();
 }
 async function cancelMarkCapture() {
@@ -668,6 +673,7 @@ async function cancelMarkCapture() {
   elements.markEditor.classList.add('hidden');
   markImage = null;
   await invoke('cancel_mark_capture');
+  try { await invoke('release_mark_editor_window'); } catch (_) {}
 }
 async function saveMarkCapture() {
   if (!markActive || markSaving) return;
@@ -678,6 +684,7 @@ async function saveMarkCapture() {
     markActive = false;
     elements.markEditor.classList.add('hidden');
     markImage = null;
+    try { await invoke('release_mark_editor_window'); } catch (_) {}
     const restored = await invoke('read_session', { parentFolder: state.parentFolder });
     state = { ...state, ...restored, lastCapture: capture };
     render();

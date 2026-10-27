@@ -33,6 +33,17 @@ struct ShortcutRegistry(Mutex<Vec<ShortcutStatus>>);
 struct MarkDraft { parent_folder: String, tc_name: String, image: DynamicImage }
 struct MarkDraftStore(Mutex<Option<MarkDraft>>);
 
+fn present_window_for_mark_editor(window: &tauri::Window) {
+  let _ = window.show();
+  let _ = window.unminimize();
+  let _ = window.set_always_on_top(true);
+  let _ = window.set_focus();
+}
+
+fn release_window_after_mark_editor(window: &tauri::Window) {
+  let _ = window.set_always_on_top(false);
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MarkRectangle { x: u32, y: u32, width: u32, height: u32 }
@@ -1925,6 +1936,18 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn present_mark_editor_window(window: tauri::Window) -> Result<(), String> {
+  present_window_for_mark_editor(&window);
+  Ok(())
+}
+
+#[tauri::command]
+fn release_mark_editor_window(window: tauri::Window) -> Result<(), String> {
+  release_window_after_mark_editor(&window);
+  Ok(())
+}
+
+#[tauri::command]
 fn get_shortcut_status(state: tauri::State<ShortcutRegistry>) -> Result<Vec<ShortcutStatus>, String> {
   state
     .0
@@ -1982,6 +2005,8 @@ fn main() {
       begin_mark_capture,
       save_mark_capture,
       cancel_mark_capture,
+      present_mark_editor_window,
+      release_mark_editor_window,
       capture_dual_window_screenshot,
       capture_long_screenshot,
       finish_flow,
