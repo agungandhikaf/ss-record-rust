@@ -16,6 +16,11 @@ const elements = {
   chooseFolderBtn: document.querySelector('#chooseFolderBtn'),
   startBtn: document.querySelector('#startBtn'),
   captureBtn: document.querySelector('#captureBtn'),
+  captureMarkBtn: document.querySelector('#captureMarkBtn'),
+  markEditor: document.querySelector('#markEditor'),
+  markCanvas: document.querySelector('#markCanvas'),
+  markSaveBtn: document.querySelector('#markSaveBtn'),
+  markCancelBtn: document.querySelector('#markCancelBtn'),
   captureDualWindowBtn: document.querySelector('#captureDualWindowBtn'),
   captureLongBtn: document.querySelector('#captureLongBtn'),
   captureFullscreenBtn: document.querySelector('#captureFullscreenBtn'),
@@ -27,6 +32,7 @@ const elements = {
   openTcBtn: document.querySelector('#openTcBtn'),
   tcList: document.querySelector('#tcList'),
   captureShortcut: document.querySelector('#captureShortcut'),
+  captureMarkShortcut: document.querySelector('#captureMarkShortcut'),
   dualWindowCaptureShortcut: document.querySelector('#dualWindowCaptureShortcut'),
   longCaptureShortcut: document.querySelector('#longCaptureShortcut'),
   nextTcShortcut: document.querySelector('#nextTcShortcut'),
@@ -61,6 +67,7 @@ let state = {
   lastCapture: null,
   shortcuts: {
     capture: isMac ? '⌘ + Shift + S' : 'Ctrl + Shift + S',
+    captureMark: isMac ? '⌘ + Shift + M' : 'Ctrl + Shift + M',
     dualWindowCapture: isMac ? '⌘ + Shift + D' : 'Ctrl + Shift + D',
     longCapture: isMac ? '⌘ + Shift + A' : 'Ctrl + Shift + A',
     nextTc: isMac ? '⌘ + Shift + N' : 'Ctrl + Shift + N',
@@ -107,6 +114,7 @@ function allButtons() {
     elements.chooseFolderBtn,
     elements.startBtn,
     elements.captureBtn,
+    elements.captureMarkBtn,
     elements.captureDualWindowBtn,
     elements.captureLongBtn,
     elements.captureFullscreenBtn,
@@ -423,6 +431,7 @@ function render() {
   elements.startBtn.dataset.flowState = flowUi.key;
 
   elements.captureShortcut.textContent = state.shortcuts.capture;
+  elements.captureMarkShortcut.textContent = state.shortcuts.captureMark;
   elements.dualWindowCaptureShortcut.textContent = state.shortcuts.dualWindowCapture;
   elements.longCaptureShortcut.textContent = state.shortcuts.longCapture;
   elements.nextTcShortcut.textContent = state.shortcuts.nextTc;
@@ -468,6 +477,7 @@ function render() {
     const isRecording = state.status === 'recording';
     elements.startBtn.disabled = flowUi.startDisabled;
     elements.captureBtn.disabled = !isRecording;
+    elements.captureMarkBtn.disabled = !isRecording;
     elements.captureDualWindowBtn.disabled = !isRecording;
     elements.captureLongBtn.disabled = !isRecording;
     elements.captureFullscreenBtn.disabled = !isRecording;
@@ -603,6 +613,113 @@ async function captureScreenshot(options = {}) {
     showToast(`Screenshot tersimpan: ${capture.fileName}`);
     await notifyUser('Screenshot tersimpan', `${capture.tcName} - Step ${capture.step}`);
   }
+}
+
+// Dedicated annotation route. The original capture paths remain untouched.
+let markActive = false;
+let markImage = null;
+let markRects = [];
+let markRedo = [];
+let markStart = null;
+let markPreview = null;
+let markSaving = false;
+
+function markPoint(event) {
+  const box = elements.markCanvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(elements.markCanvas.width, (event.clientX - box.left) * elements.markCanvas.width / box.width)),
+    y: Math.max(0, Math.min(elements.markCanvas.height, (event.clientY - box.top) * elements.markCanvas.height / box.height))
+  };
+}
+function markRectangle(a, b) {
+  return { x: Math.round(Math.min(a.x,b.x)), y: Math.round(Math.min(a.y,b.y)), width: Math.round(Math.abs(a.x-b.x)), height: Math.round(Math.abs(a.y-b.y)) };
+}
+function redrawMarks() {
+  if (!markImage) return;
+  const canvas = elements.markCanvas;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(markImage, 0, 0);
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 3;
+  for (const rect of [...markRects, ...(markPreview ? [markPreview] : [])]) {
+    ctx.strokeRect(rect.x + 1.5, rect.y + 1.5, Math.max(0,rect.width - 3), Math.max(0,rect.height - 3));
+  }
+}
+async function beginMarkCapture(hideWindow = false) {
+  if (markActive || markSaving || !state.parentFolder || state.status !== 'recording') return;
+  // Existing global shortcut fires while target window is focused, so do not hide app on shortcut.
+  const dataUrl = await invoke('begin_mark_capture', { parentFolder: state.parentFolder, currentTcName: state.currentTcName, hideWindow });
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  markImage = img;
+  markRects = []; markRedo = []; markPreview = null; markStart = null;
+  elements.markCanvas.width = img.naturalWidth;
+  elements.markCanvas.height = img.naturalHeight;
+  markActive = true;
+  elements.markEditor.classList.remove('hidden');
+  redrawMarks();
+  elements.markSaveBtn.focus();
+}
+async function cancelMarkCapture() {
+  if (!markActive || markSaving) return;
+  markActive = false;
+  elements.markEditor.classList.add('hidden');
+  markImage = null;
+  await invoke('cancel_mark_capture');
+}
+async function saveMarkCapture() {
+  if (!markActive || markSaving) return;
+  markSaving = true;
+  elements.markSaveBtn.disabled = true;
+  try {
+    const capture = await invoke('save_mark_capture', { rectangles: markRects });
+    markActive = false;
+    elements.markEditor.classList.add('hidden');
+    markImage = null;
+    const restored = await invoke('read_session', { parentFolder: state.parentFolder });
+    state = { ...state, ...restored, lastCapture: capture };
+    render();
+    showToast(capture.clipboardCopied ? `Screenshot mark tersimpan & masuk clipboard: ${capture.fileName}` : `Screenshot mark tersimpan: ${capture.fileName}`);
+  } catch (error) { showToast(String(error), 'error'); }
+  finally { markSaving = false; elements.markSaveBtn.disabled = false; }
+}
+function configureMarkEditor() {
+  const canvas = elements.markCanvas;
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!markActive || markSaving || event.button !== 0) return;
+    markStart = markPoint(event);
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!markStart) return;
+    markPreview = markRectangle(markStart, markPoint(event));
+    redrawMarks();
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    if (!markStart) return;
+    const rect = markRectangle(markStart, markPoint(event));
+    markStart = null; markPreview = null;
+    if (rect.width >= 4 && rect.height >= 4) { markRects.push(rect); markRedo = []; }
+    redrawMarks();
+  });
+  canvas.addEventListener('pointercancel', () => { markStart = null; markPreview = null; redrawMarks(); });
+  document.addEventListener('keydown', (event) => {
+    if (!markActive) return;
+    const mod = isMac ? event.metaKey : event.ctrlKey;
+    const k = event.key.toLowerCase();
+    if (mod && k === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) { if (markRedo.length) markRects.push(markRedo.pop()); }
+      else if (markRects.length) markRedo.push(markRects.pop());
+      redrawMarks();
+    } else if (event.key === 'Enter' && !event.repeat) {
+      event.preventDefault(); saveMarkCapture();
+    } else if (event.key === 'Escape') { event.preventDefault(); cancelMarkCapture(); }
+  }, true);
+  elements.markSaveBtn.addEventListener('click', saveMarkCapture);
+  elements.markCancelBtn.addEventListener('click', cancelMarkCapture);
 }
 
 async function captureFullscreenScreenshot() {
@@ -819,6 +936,7 @@ function registerButtonHandlers() {
 
   // Capture dari tombol akan hide window sebentar supaya UI aplikasi tidak ikut masuk screenshot.
   elements.captureBtn.addEventListener('click', () => runAction(() => captureScreenshot(true)));
+  elements.captureMarkBtn.addEventListener('click', () => runAction(() => beginMarkCapture(true)));
   elements.captureDualWindowBtn.addEventListener('click', () => runAction(() => captureDualWindowScreenshot(true)));
   elements.captureLongBtn.addEventListener('click', () => runAction(() => captureLongScreenshot(true)));
   elements.captureFullscreenBtn.addEventListener('click', () => runAction(() => captureFullscreenScreenshot()));
@@ -841,12 +959,13 @@ function registerButtonHandlers() {
 }
 
 async function registerShortcutListeners() {
-  await listen('shortcut-capture', () => runAction(() => captureScreenshot(false)));
+  await listen('shortcut-capture', () => { if (!markActive) runAction(() => captureScreenshot(false)); });
+  await listen('shortcut-capture-mark', () => { if (!markActive) runAction(beginMarkCapture); });
   await listen('shortcut-capture-dual-window', () => runAction(() => captureDualWindowScreenshot(false)));
   await listen('shortcut-capture-long', () => runAction(() => captureLongScreenshot(false)));
-  await listen('shortcut-next-tc', () => runAction(nextTc));
-  await listen('shortcut-mark-pending', () => runAction(markPending));
-  await listen('shortcut-finish', () => runAction(finishFlow));
+  await listen('shortcut-next-tc', () => { if (!markActive) runAction(nextTc); });
+  await listen('shortcut-mark-pending', () => { if (!markActive) runAction(markPending); });
+  await listen('shortcut-finish', () => { if (!markActive) runAction(finishFlow); });
 
   try {
     const shortcutStatus = await invoke('get_shortcut_status');
@@ -859,6 +978,7 @@ async function registerShortcutListeners() {
 
 async function initApp() {
   registerButtonHandlers();
+  configureMarkEditor();
   registerShortcutListeners();
 
   try {

@@ -54,6 +54,7 @@
         <div class="action-grid">
           <button id="startBtn" class="primary-btn start-state-btn">Start Flow</button>
           <button id="captureBtn" class="capture-btn featured-action">Capture Screenshot</button>
+          <button id="captureMarkBtn" class="capture-btn">Capture + Mark</button>
           <button id="captureDualWindowBtn" class="dual-window-capture-btn">Capture Dual Window</button>
           <button id="captureLongBtn" class="long-capture-btn">Capture Long Screenshot</button>
           <button id="captureFullscreenBtn" class="fullscreen-capture-btn">Capture Fullscreen (5s)</button>
@@ -80,6 +81,7 @@
         <h2>Shortcut</h2>
         <div class="shortcut-list">
           <div><kbd id="captureShortcut">Ctrl/⌘ + Shift + S</kbd><span>Capture</span></div>
+          <div><kbd id="captureMarkShortcut">Ctrl/⌘ + Shift + M</kbd><span>Capture + Mark</span></div>
           <div><kbd id="dualWindowCaptureShortcut">Ctrl/⌘ + Shift + D</kbd><span>Dual Window</span></div>
           <div><kbd id="longCaptureShortcut">Ctrl/⌘ + Shift + A</kbd><span>Long Capture</span></div>
           <div><kbd id="nextTcShortcut">Ctrl/⌘ + Shift + N</kbd><span>Next TC</span></div>
@@ -120,6 +122,10 @@
       <div id="toast" class="toast hidden"></div>
     </main>
 
+    <div id="markEditor" class="mark-overlay hidden" role="dialog" aria-modal="true" aria-label="Editor kotak merah">
+      <div class="mark-toolbar"><strong>Red Rectangle</strong><span>Drag untuk menggambar • Ctrl/⌘+Z Undo • Ctrl/⌘+Shift+Z Redo</span><button id="markCancelBtn" type="button">Esc — Batal</button><button id="markSaveBtn" type="button">Enter — Simpan</button></div>
+      <div class="mark-stage"><canvas id="markCanvas" aria-label="Screenshot, drag untuk membuat kotak merah"></canvas></div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

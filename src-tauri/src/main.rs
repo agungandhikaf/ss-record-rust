@@ -1,6 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use arboard::{Clipboard, ImageData};
+use base64::Engine;
+use image::ImageOutputFormat;
+use image::Rgba;
+use std::io::Cursor;
 use chrono::Local;
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use screenshots::Screen;
@@ -25,6 +29,14 @@ struct ShortcutStatus {
 }
 
 struct ShortcutRegistry(Mutex<Vec<ShortcutStatus>>);
+
+struct MarkDraft { parent_folder: String, tc_name: String, image: DynamicImage }
+struct MarkDraftStore(Mutex<Option<MarkDraft>>);
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkRectangle { x: u32, y: u32, width: u32, height: u32 }
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +245,31 @@ fn count_png_files(folder: &Path) -> u32 {
     .unwrap_or(0)
 }
 
+// Caption entries are additive: existing descriptions are never rewritten or deleted.
+fn sync_captions(folder: &Path) -> Result<(), String> {
+  let path = folder.join("captions.txt");
+  let existing = fs::read_to_string(&path).unwrap_or_default();
+  let count = count_png_files(folder);
+  let mut content = existing.clone();
+  // Preserve every existing entry and handwritten description. Only append missing numbered items.
+  let last_number = existing.lines().filter_map(|line| {
+    let trimmed = line.trim_start();
+    let (prefix, _) = trimmed.split_once('.')?;
+    if prefix.is_empty() || !prefix.chars().all(|c| c.is_ascii_digit()) { return None; }
+    prefix.parse::<u32>().ok()
+  }).max().unwrap_or(0);
+  if count > last_number {
+    for n in (last_number + 1)..=count {
+      if !content.is_empty() { content.push_str("\n\n"); }
+      content.push_str(&format!("{n}."));
+    }
+  }
+  if !path.exists() || content != existing {
+    fs::write(path, content).map_err(|e| format!("Gagal memperbarui captions.txt: {e}"))?;
+  }
+  Ok(())
+}
+
 fn parse_screenshot_step_from_name(name: &str) -> Option<u32> {
   // [SCREENSHOT_SEQUENCE_DELETE_FIX]
   // Nomor screenshot harus mengikuti prefix file terbesar, bukan jumlah file.
@@ -422,6 +459,7 @@ fn create_or_switch_tc_state(
   let tc_folder = parent.join(&tc);
 
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder {tc}: {e}"))?;
+  sync_captions(&tc_folder)?;
 
   state.parent_folder = parent_folder.to_string();
   state.current_tc_name = tc.clone();
@@ -1245,6 +1283,7 @@ fn read_session(parent_folder: String) -> Result<SessionState, String> {
   let parent = Path::new(&parent_folder);
 
   if let Some(state) = read_session_file(parent) {
+    for item in &state.tc_list { if Path::new(&item.folder).is_dir() { sync_captions(Path::new(&item.folder))?; } }
     return Ok(normalize_session(state));
   }
 
@@ -1369,6 +1408,7 @@ fn resume_tc(parent_folder: String, target_tc_name: String) -> Result<SessionSta
 
   state.current_tc_name = target_tc_name.clone();
   state.current_tc_folder = target_folder.to_string_lossy().to_string();
+  sync_captions(&target_folder)?;
   state.current_step = count_png_files(&target_folder);
   state.status = "recording".to_string();
   upsert_tc_item(&mut state, &target_tc_name, "in_progress");
@@ -1395,6 +1435,7 @@ fn do_capture(
   let parent = Path::new(&parent_folder);
   let tc_folder = parent.join(&current_tc_name);
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
+  sync_captions(&tc_folder)?;
 
   let _ = current_step;
   let step = screenshot_sequence_base(&tc_folder) + 1;
@@ -1446,6 +1487,7 @@ fn do_capture(
   let session_tc = session.current_tc_name.clone();
   upsert_tc_item(&mut session, &session_tc, "in_progress");
   save_session(&session)?;
+  sync_captions(&tc_folder)?;
 
   Ok(capture)
 }
@@ -1466,6 +1508,7 @@ fn do_dual_window_capture(
   let parent = Path::new(&parent_folder);
   let tc_folder = parent.join(&current_tc_name);
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
+  sync_captions(&tc_folder)?;
 
   let _ = current_step;
   let step = screenshot_sequence_base(&tc_folder) + 1;
@@ -1514,6 +1557,7 @@ fn do_dual_window_capture(
   let session_tc = session.current_tc_name.clone();
   upsert_tc_item(&mut session, &session_tc, "in_progress");
   save_session(&session)?;
+  sync_captions(&tc_folder)?;
 
   Ok(capture)
 }
@@ -1534,6 +1578,7 @@ fn do_long_capture(
   let parent = Path::new(&parent_folder);
   let tc_folder = parent.join(&current_tc_name);
   fs::create_dir_all(&tc_folder).map_err(|e| format!("Gagal membuat folder TC: {e}"))?;
+  sync_captions(&tc_folder)?;
 
   let _ = current_step;
   let step = screenshot_sequence_base(&tc_folder) + 1;
@@ -1690,7 +1735,79 @@ fn do_long_capture(
   let session_tc = session.current_tc_name.clone();
   upsert_tc_item(&mut session, &session_tc, "in_progress");
   save_session(&session)?;
+  sync_captions(&tc_folder)?;
 
+  Ok(capture)
+}
+
+#[tauri::command]
+fn begin_mark_capture(window: tauri::Window, store: tauri::State<MarkDraftStore>, parent_folder: String, current_tc_name: String, hide_window: bool) -> Result<String, String> {
+  if parent_folder.trim().is_empty() || current_tc_name.trim().is_empty() { return Err("Mulai flow terlebih dahulu.".into()); }
+  let session = read_session_file(Path::new(&parent_folder)).ok_or("Session tidak ditemukan.")?;
+  if session.status != "recording" || session.current_tc_name != current_tc_name { return Err("TC aktif sudah berubah; ulangi capture.".into()); }
+  if hide_window { let _ = window.hide(); thread::sleep(Duration::from_millis(650)); }
+  let result = (|| {
+    let screen = Screen::all().map_err(|e| e.to_string())?.into_iter().next().ok_or("Layar tidak ditemukan.")?;
+    let image = prepare_captured_image(capture_display_image(&screen, &std::env::temp_dir().join(format!("mytbc-mark-{}.png", Uuid::new_v4())))?, false);
+    let mut encoded = Vec::new();
+    image.write_to(&mut Cursor::new(&mut encoded), ImageOutputFormat::Png).map_err(|e| e.to_string())?;
+    let data_url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(encoded));
+    *store.0.lock().map_err(|_| "Editor sedang dipakai.")? = Some(MarkDraft { parent_folder, tc_name: current_tc_name, image });
+    Ok(data_url)
+  })();
+  if hide_window { let _ = window.show(); let _ = window.set_focus(); }
+  result
+}
+
+#[tauri::command]
+fn cancel_mark_capture(store: tauri::State<MarkDraftStore>) -> Result<(), String> {
+  *store.0.lock().map_err(|_| "Editor tidak tersedia.")? = None;
+  Ok(())
+}
+
+#[tauri::command]
+fn save_mark_capture(store: tauri::State<MarkDraftStore>, rectangles: Vec<MarkRectangle>) -> Result<CaptureResult, String> {
+  let mut guard = store.0.lock().map_err(|_| "Editor tidak tersedia.")?;
+  let draft = guard.as_ref().ok_or("Tidak ada screenshot untuk disimpan.")?;
+  let parent = Path::new(&draft.parent_folder);
+  let session = read_session_file(parent).ok_or("Session tidak ditemukan.")?;
+  if session.status != "recording" || session.current_tc_name != draft.tc_name { return Err("TC aktif berubah; screenshot tidak disimpan.".into()); }
+  let tc_folder = parent.join(&draft.tc_name);
+  fs::create_dir_all(&tc_folder).map_err(|e| e.to_string())?;
+  let step = screenshot_sequence_base(&tc_folder) + 1;
+  let file_name = format!("{:03}_{}_{}_mark.png", step, Local::now().format("%Y%m%d_%H%M%S_%3f"), &Uuid::new_v4().simple().to_string()[..4]);
+  let file_path = tc_folder.join(&file_name);
+  let mut image = draft.image.to_rgba8();
+  let (iw, ih) = image.dimensions();
+  for rect in rectangles.iter().take(500) {
+    if rect.width < 2 || rect.height < 2 || rect.x >= iw || rect.y >= ih { continue; }
+    let x2 = rect.x.saturating_add(rect.width).min(iw - 1);
+    let y2 = rect.y.saturating_add(rect.height).min(ih - 1);
+    for t in 0..3u32 {
+      for x in rect.x..=x2 {
+        if rect.y + t < ih { image.put_pixel(x, rect.y + t, Rgba([239, 68, 68, 255])); }
+        if y2 >= t { image.put_pixel(x, y2 - t, Rgba([239, 68, 68, 255])); }
+      }
+      for y in rect.y..=y2 {
+        if rect.x + t < iw { image.put_pixel(rect.x + t, y, Rgba([239, 68, 68, 255])); }
+        if x2 >= t { image.put_pixel(x2 - t, y, Rgba([239, 68, 68, 255])); }
+      }
+    }
+  }
+  let (clipboard_copied, clipboard_error) = save_final_image(DynamicImage::ImageRgba8(image), &file_path)?;
+  let capture = CaptureResult { tc_name: draft.tc_name.clone(), tc_folder: tc_folder.to_string_lossy().to_string(), step, file_name, file_path: file_path.to_string_lossy().to_string(), timestamp: now_iso(), clipboard_copied, clipboard_error };
+  let mut metadata = load_or_init_metadata(parent, &draft.tc_name);
+  metadata.status = "in_progress".into();
+  metadata.updated_at = now_iso();
+  metadata.screenshots.push(capture.clone());
+  write_json(&metadata_path(parent, &draft.tc_name), &metadata)?;
+  let mut session = session;
+  session.current_step = step;
+  let tc = session.current_tc_name.clone();
+  upsert_tc_item(&mut session, &tc, "in_progress");
+  save_session(&session)?;
+  sync_captions(&tc_folder)?;
+  *guard = None;
   Ok(capture)
 }
 
@@ -1819,9 +1936,11 @@ fn get_shortcut_status(state: tauri::State<ShortcutRegistry>) -> Result<Vec<Shor
 fn main() {
   tauri::Builder::default()
     .manage(ShortcutRegistry(Mutex::new(Vec::new())))
+    .manage(MarkDraftStore(Mutex::new(None)))
     .setup(|app| {
       let shortcuts = [
         ("CommandOrControl+Shift+S", "shortcut-capture"),
+        ("CommandOrControl+Shift+M", "shortcut-capture-mark"),
         ("CommandOrControl+Shift+A", "shortcut-capture-long"),
         ("CommandOrControl+Shift+D", "shortcut-capture-dual-window"),
         ("CommandOrControl+Shift+N", "shortcut-next-tc"),
@@ -1860,6 +1979,9 @@ fn main() {
       mark_pending,
       resume_tc,
       capture_screenshot,
+      begin_mark_capture,
+      save_mark_capture,
+      cancel_mark_capture,
       capture_dual_window_screenshot,
       capture_long_screenshot,
       finish_flow,

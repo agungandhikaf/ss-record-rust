@@ -165,3 +165,12 @@ MyScreenshots_v1.0.7_mac.dmg
 ```
 
 Catatan migrasi: karena nama aplikasi dan identifier berubah, Windows/macOS bisa menganggap **MyScreenshots** sebagai aplikasi baru. Jika masih ada aplikasi lama **Flow Screenshot Recorder**, uninstall/hapus aplikasi lama satu kali agar user tidak bingung. Data screenshot di parent folder tetap aman.
+
+## Pembaruan: Capture + Mark dan captions.txt (2026-10-27)
+
+- Shortcut baru **Ctrl+Shift+M** (Windows/Linux) / **Command+Shift+M** (macOS) mengambil screenshot area browser aktif ke editor terpisah. Shortcut dan mode capture lama tidak diubah.
+- Dalam editor, drag untuk menggambar kotak outline merah (tebal 3 px), ulangi untuk lebih dari satu kotak. **Ctrl/Command+Z** undo, **Ctrl/Command+Shift+Z** redo, **Enter** menyimpan, **Esc** membatalkan tanpa menambah evidence maupun metadata.
+- Hasil mark disimpan dengan suffix `_mark.png` ke TC aktif, masuk ke `metadata.json`/`session.json`, dan dicoba disalin ke clipboard sebagaimana capture biasa.
+- `captions.txt` dibuat saat TC dibuat serta diselaraskan ketika session dibaca, TC di-resume, dan setiap screenshot berhasil disimpan. Format: `1.`, baris kosong, `2.`, dst, mengikuti jumlah PNG. Nomor yang belum ada ditambahkan; **isi keterangan yang sudah diketik pengguna tidak ditimpa dan tidak dihapus**. Jika PNG dihapus manual, nomor lama dibiarkan agar catatan pengguna tidak hilang; edit manual jika penomoran perlu dirapikan.
+- File yang berubah: `index.html`, `src/main.js`, `src/styles.css`, `src-tauri/src/main.rs`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `README.md`.
+- Verifikasi yang diperlukan di macOS/Windows: compile `npm run dev`, izin Screen Recording macOS, shortcut global ketika browser fokus, gambar rectangle/undo/redo, Enter/Esc, clipboard, count dan isi captions untuk semua mode capture, serta regresi flow dan long capture.
