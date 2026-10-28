@@ -185,3 +185,14 @@ Catatan migrasi: karena nama aplikasi dan identifier berubah, Windows/macOS bisa
 - **Refresh icon aplikasi**: aset icon bundle diganti agar tampilan MyTBC lebih modern dan lebih selaras dengan fungsi screenshot evidence + rectangle marking. File icon yang diperbarui: `src-tauri/icons/32x32.png`, `src-tauri/icons/128x128.png`, `src-tauri/icons/128x128@2x.png`, `src-tauri/icons/icon.ico`, `src-tauri/icons/icon.icns`.
 - File kode yang berubah untuk fixing ini: `src/main.js`, `src-tauri/src/main.rs`, `README.md`, dan seluruh file icon di `src-tauri/icons/`.
 - Verifikasi yang disarankan: tekan shortcut Capture + Mark saat browser aktif (tanpa klik MyTBC), pastikan editor langsung tampil fokus; uji **Esc**, **Enter**, **Undo/Redo**, clipboard, penomoran screenshot, serta pastikan icon baru muncul saat aplikasi di-run/build ulang.
+
+## Redesign V2 — Light/Dark Mode (2026-10-28)
+
+- Tampilan frontend diubah menjadi dashboard desktop dengan sidebar: **Overview, Test Cases, Evidence, Settings, Update**.
+- **Overview**: quick-capture Screenshot, Capture + Mark, Dual Window, Long Screenshot, Fullscreen; kartu Flow Aktif; Recent Evidence; rangkuman test case.
+- Warna berdasarkan fungsi: biru untuk capture/action utama, hijau untuk recording, oranye untuk pending, dan merah untuk finish. Background/panel didesain netral agar nyaman untuk penggunaan panjang.
+- **Light dan Dark mode** dapat diganti dari header atau Settings. Preferensi disimpan secara lokal di `localStorage` (`mytbc-theme-v2`) dan dipulihkan saat aplikasi dibuka kembali.
+- Aksi/ID backend dan shortcut tetap menggunakan mekanisme lama; **tidak ada perubahan Rust, format screenshot, metadata, session, captions, atau alur capture**.
+- Menu Evidence menampilkan capture terakhir dari state sesi saat ini dan tombol membuka folder TC/parent. Ini bukan galeri seluruh PNG; untuk seluruh file gunakan Open Current TC.
+- File yang berubah: `index.html`, `src/main.js`, `src/styles.css`, `README.md`. Update ini dikemas sebagai ZIP patch berisi file berubah saja (path relatif dari root project).
+- Pengujian: `npm ci && npm run dev`, cek perpindahan menu, persistensi light/dark setelah restart, shortcut global saat browser fokus, flow start/next/pending/finish/resume, semua mode capture, mark editor, captions.txt, serta halaman Update.

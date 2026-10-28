@@ -455,10 +455,23 @@ function render() {
     elements.lastCaptureText.textContent = `${state.lastCapture.tcName} - Step ${state.lastCapture.step}: ${state.lastCapture.fileName}${clipboardText}`;
     elements.lastCapturePanel.classList.remove('hidden');
   } else {
-    elements.lastCapturePanel.classList.add('hidden');
+    elements.lastCaptureText.textContent = 'Belum ada screenshot dalam sesi ini.';
   }
 
   elements.appVersion.textContent = state.appVersion || '-';
+  document.querySelector('#versionTop').textContent = `v${state.appVersion || '-'}`;
+  document.querySelector('#footerVersion').textContent = state.appVersion || '-';
+  document.querySelector('#footerStatus').textContent = state.status === 'recording' ? 'Recording' : flowUi.badge;
+  document.querySelector('#flowStatusMini').textContent = state.status === 'recording' ? '● Recording' : `● ${flowUi.badge}`;
+  document.querySelector('#flowStatusMini').className = `state-dot ${flowUi.key}`;
+  document.querySelector('#overviewTcSummary').textContent = Array.isArray(state.tcList) && state.tcList.length
+    ? `${state.tcList.length} test cases · ${state.tcList.filter(item => item.status === 'pending').length} pending · Current: ${state.currentTcName || '-'}`
+    : 'Belum ada test case. Pilih parent folder pada Settings, lalu Start Flow.';
+  document.querySelector('#recentEvidenceDetails').textContent = state.lastCapture?.filePath
+    ? `${state.lastCapture.fileName} — ${state.lastCapture.tcName} / Step ${state.lastCapture.step}`
+    : 'Belum ada screenshot dalam sesi ini.';
+  document.querySelector('#captureShortcutSettings').textContent = state.shortcuts.capture;
+
 
   if (state.updateInfo?.checking) {
     elements.updateStatusText.textContent = 'Sedang mengecek GitHub Releases...';
@@ -937,6 +950,39 @@ async function openLatestRelease() {
   await openExternal(state.updateInfo?.releaseUrl || GITHUB_RELEASES_URL);
 }
 
+function configureDashboardV2() {
+  const storageKey = 'mytbc-theme-v2';
+  const applyTheme = (theme) => {
+    const mode = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = mode;
+    document.querySelector('#themeLabel').textContent = mode === 'dark' ? 'Light mode' : 'Dark mode';
+    document.querySelector('#themeToggle').firstChild.textContent = mode === 'dark' ? '☀ ' : '☾ ';
+    try { window.localStorage.setItem(storageKey, mode); } catch (_) {}
+  };
+  let initialTheme = 'light';
+  try { initialTheme = window.localStorage.getItem(storageKey) || 'light'; } catch (_) {}
+  applyTheme(initialTheme);
+  const toggleTheme = () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  document.querySelector('#themeToggle').addEventListener('click', toggleTheme);
+  document.querySelector('#themeToggleSettings').addEventListener('click', toggleTheme);
+  const showPage = (name) => {
+    document.querySelectorAll('.view-page').forEach(page => page.classList.toggle('hidden', page.id !== `page-${name}`));
+    document.querySelectorAll('[data-page]').forEach(button => {
+      const selected = button.dataset.page === name;
+      button.classList.toggle('active', selected);
+      if (selected) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+  };
+  document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.page)));
+  document.querySelector('#viewAllBtn').addEventListener('click', () => showPage('evidence'));
+  document.querySelector('#viewCasesBtn').addEventListener('click', () => showPage('cases'));
+  document.querySelector('#openParentSettingsBtn').addEventListener('click', () => {
+    if (state.parentFolder) runAction(() => invoke('open_path', { path: state.parentFolder }));
+    else showToast('Pilih parent folder lebih dulu.');
+  });
+}
+
 function registerButtonHandlers() {
   elements.chooseFolderBtn.addEventListener('click', chooseFolder);
   elements.startBtn.addEventListener('click', () => runAction(startFlow));
@@ -984,6 +1030,7 @@ async function registerShortcutListeners() {
 }
 
 async function initApp() {
+  configureDashboardV2();
   registerButtonHandlers();
   configureMarkEditor();
   registerShortcutListeners();

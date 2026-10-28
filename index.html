@@ -1,131 +1,35 @@
 <!DOCTYPE html>
-<html lang="id">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MyTBC</title>
-    <link rel="stylesheet" href="/src/styles.css" />
-  </head>
-  <body>
-    <main class="app-shell">
-      <section class="hero-card">
-        <div>
-          <p class="eyebrow">Manual Screenshot Tool</p>
-          <h1>MyTBC</h1>
-          <p class="subtitle">Selamat datang Tester Budak Corporate. Tool kecil buat bantu evidence kamu tetap rapi, waras, dan siap dipertanggungjawabkan.</p>
+<html lang="id"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>MyTBC</title><link rel="stylesheet" href="/src/styles.css"/></head>
+<body>
+<div class="desktop-shell">
+  <header class="windowbar"><div class="brand-small"><span class="brand-mark">▣</span><b>MyTBC</b><span class="muted" id="versionTop">v1.0.18</span></div><button id="themeToggle" class="icon-button" title="Toggle light/dark mode" aria-label="Ubah tema">☾ <span id="themeLabel">Dark mode</span></button></header>
+  <div class="desktop-layout">
+    <aside class="sidebar"><div class="sidebar-brand"><div class="brand-icon">▣</div><div><strong>MyTBC</strong><small>QA Evidence</small></div></div>
+      <nav class="nav-items" aria-label="Navigation"><button class="nav-item active" data-page="overview">▦ <span>Overview</span></button><button class="nav-item" data-page="cases">☷ <span>Test Cases</span></button><button class="nav-item" data-page="evidence">▧ <span>Evidence</span></button><button class="nav-item" data-page="settings">⚙ <span>Settings</span></button><button class="nav-item" data-page="update">↻ <span>Update</span></button></nav>
+      <div class="sidebar-footer"><span id="statusBadge" class="status-badge idle">Idle</span><div class="small-note">Local evidence workspace</div></div>
+    </aside>
+    <main class="workspace">
+      <section id="page-overview" class="view-page">
+        <div class="page-heading"><div><h1>Screenshot workspace</h1><p>Simpan evidence pengujian dengan cepat dan terstruktur.</p></div><span class="heading-meta">MYTBC / OVERVIEW</span></div>
+        <div class="capture-grid">
+          <button id="captureBtn" class="capture-tile"><span class="tile-icon">▣</span><b>Screenshot</b><kbd id="captureShortcut">Ctrl + Shift + S</kbd></button>
+          <button id="captureMarkBtn" class="capture-tile highlight"><span class="tile-icon">▧</span><b>Capture + Mark</b><kbd id="captureMarkShortcut">Ctrl + Shift + M</kbd></button>
+          <button id="captureDualWindowBtn" class="capture-tile"><span class="tile-icon">◫</span><b>Dual Window</b><kbd id="dualWindowCaptureShortcut">Ctrl + Shift + D</kbd></button>
+          <button id="captureLongBtn" class="capture-tile"><span class="tile-icon">↕</span><b>Long Screenshot</b><kbd id="longCaptureShortcut">Ctrl + Shift + A</kbd></button>
+          <button id="captureFullscreenBtn" class="capture-tile"><span class="tile-icon">⛶</span><b>Fullscreen</b><span class="tile-hint">5-second delay</span></button>
         </div>
-        <div id="statusBadge" class="status-badge idle">Idle</div>
+        <div class="overview-grid"><section class="panel flow-panel"><div class="section-heading"><h2>Flow Aktif</h2><span id="flowStatusMini" class="state-dot">● Status</span></div><div id="flowStateCard" class="flow-state-card idle"><span class="muted">CURRENT TEST CASE</span><div class="flow-current"><strong id="currentTc">-</strong><span class="caption-count"><b id="capturedCount">0</b> screenshots</span></div><h3 id="flowStateTitle">Belum dimulai</h3><p id="flowStateDescription">Pilih parent folder, lalu klik Start Flow.</p></div><div class="flow-actions"><button id="startBtn" class="primary-btn">Start Flow</button><button id="nextTcBtn" class="primary-btn">→ Next TC</button><button id="markPendingBtn" class="warning-btn">Ⅱ Pending</button><button id="finishBtn" class="danger-btn">■ Finish</button></div></section>
+        <section id="lastCapturePanel" class="panel last-capture"><div class="section-heading"><h2>Recent Evidence</h2><button id="viewAllBtn" class="text-btn">View all →</button></div><div class="recent-placeholder"><div class="recent-file-icon">▧</div><div><span id="lastCaptureText">Belum ada screenshot pada sesi ini.</span><p class="small-note">Capture terbaru akan tampil di sini.</p></div></div></section></div>
+        <section class="panel cases-preview"><div class="section-heading"><h2>Active Test Cases</h2><button id="viewCasesBtn" class="text-btn">Kelola Test Cases →</button></div><div id="overviewTcSummary" class="overview-summary">Data test case ditampilkan di halaman Test Cases.</div></section>
       </section>
-
-      <section class="welcome-card">
-        <span class="welcome-kicker">Tester Budak Corporate Mode</span>
-        <h2>Selamat datang Tester Budak Corporate</h2>
-        <p>Semoga kerjaanmu hari ini lancar, bug-nya jinak, screenshot-nya rapi, evidence-nya valid, dan tiket Jira nurut tanpa drama. Kalau regression terasa seperti sinetron 900 episode, tarik napas dulu—kamu bukan sekadar pencari bug, kamu adalah benteng terakhir sebelum production diserbu chaos.</p>
-      </section>
-
-      <section class="panel">
-        <label class="field-label">Parent Folder</label>
-        <div class="folder-picker">
-          <div id="parentFolder" class="folder-value">Belum dipilih</div>
-          <button id="chooseFolderBtn" class="secondary-btn">Browse</button>
-        </div>
-      </section>
-
-      <section class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-label">Current TC</span>
-          <strong id="currentTc">-</strong>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Captured</span>
-          <strong id="capturedCount">0</strong>
-        </div>
-      </section>
-
-      <section class="panel action-panel">
-        <div id="flowStateCard" class="flow-state-card idle">
-          <div>
-            <span class="flow-state-kicker">Flow Status</span>
-            <strong id="flowStateTitle">Belum dimulai</strong>
-            <p id="flowStateDescription">Pilih parent folder, lalu klik Start Flow untuk membuat TC001.</p>
-          </div>
-        </div>
-
-        <div class="action-grid">
-          <button id="startBtn" class="primary-btn start-state-btn">Start Flow</button>
-          <button id="captureBtn" class="capture-btn featured-action">Capture Screenshot</button>
-          <button id="captureMarkBtn" class="capture-btn">Capture + Mark</button>
-          <button id="captureDualWindowBtn" class="dual-window-capture-btn">Capture Dual Window</button>
-          <button id="captureLongBtn" class="long-capture-btn">Capture Long Screenshot</button>
-          <button id="captureFullscreenBtn" class="fullscreen-capture-btn">Capture Fullscreen (5s)</button>
-          <button id="nextTcBtn" class="secondary-btn">Next TC</button>
-          <button id="markPendingBtn" class="warning-btn">Mark Pending</button>
-          <button id="finishBtn" class="danger-btn">Finish</button>
-          <button id="openParentBtn" class="ghost-btn">Open Parent</button>
-          <button id="openTcBtn" class="ghost-btn">Open Current TC</button>
-          <button id="refreshTcListBtn" class="ghost-btn">Refresh TC List</button>
-        </div>
-      </section>
-
-      <section class="panel tc-list-panel">
-        <div class="panel-title-row">
-          <div>
-            <h2>TC List</h2>
-            <p>Resume TC lama kalau ada flow yang sempat Pending.</p>
-          </div>
-        </div>
-        <div id="tcList" class="tc-list empty">Belum ada TC. Pilih parent folder lalu klik Start.</div>
-      </section>
-
-      <section class="panel shortcut-panel">
-        <h2>Shortcut</h2>
-        <div class="shortcut-list">
-          <div><kbd id="captureShortcut">Ctrl/⌘ + Shift + S</kbd><span>Capture</span></div>
-          <div><kbd id="captureMarkShortcut">Ctrl/⌘ + Shift + M</kbd><span>Capture + Mark</span></div>
-          <div><kbd id="dualWindowCaptureShortcut">Ctrl/⌘ + Shift + D</kbd><span>Dual Window</span></div>
-          <div><kbd id="longCaptureShortcut">Ctrl/⌘ + Shift + A</kbd><span>Long Capture</span></div>
-          <div><kbd id="nextTcShortcut">Ctrl/⌘ + Shift + N</kbd><span>Next TC</span></div>
-          <div><kbd id="pendingShortcut">Ctrl/⌘ + Shift + P</kbd><span>Mark Pending</span></div>
-          <div><kbd id="finishShortcut">Ctrl/⌘ + Shift + F</kbd><span>Finish</span></div>
-        </div>
-        <p id="shortcutWarning" class="warning-text hidden"></p>
-      </section>
-
-      <section id="lastCapturePanel" class="panel last-capture hidden">
-        <h2>Last Capture</h2>
-        <p id="lastCaptureText">-</p>
-      </section>
-
-      <section class="panel update-panel">
-        <div class="panel-title-row">
-          <div>
-            <h2>Aplikasi & Update</h2>
-            <p>Gunakan GitHub Releases untuk mengecek dan download installer terbaru.</p>
-          </div>
-          <span class="version-pill">Version: <strong id="appVersion">-</strong></span>
-        </div>
-        <p id="updateStatusText" class="update-status-text">Klik Check Update untuk mengecek versi terbaru dari GitHub Releases.</p>
-        <div class="update-actions">
-          <button id="checkUpdateBtn" class="secondary-btn">Check Update</button>
-          <button id="downloadUpdateBtn" class="primary-btn hidden">Download Update</button>
-          <button id="openReleaseBtn" class="ghost-btn hidden">Open Releases</button>
-        </div>
-        <p class="small-note">Jika update tersedia, aplikasi akan membuka installer terbaru dari GitHub. Tutup aplikasi dulu sebelum menjalankan installer baru.</p>
-      </section>
-
-      <section class="panel info-panel">
-        <h2>Konsep Flow</h2>
-        <p><strong>Next TC</strong> menandai TC aktif sebagai Done dan pindah ke TC baru. <strong>Mark Pending</strong> menandai TC aktif sebagai Pending, lalu lanjut ke TC baru. Untuk melanjutkan TC lama, klik <strong>Resume</strong> pada TC List.</p>
-        <p class="small-note">Mode screenshot: Browser Area. Jalankan shortcut <strong>Dual Window</strong> untuk mengambil dua window berdampingan tanpa taskbar bawah. Jalankan shortcut <strong>Long Capture</strong> ketika browser target aktif dan pointer berada di area halaman; jangan gerakkan mouse atau mengetik sampai proses selesai. Untuk window fullscreen/F11, gunakan <strong>Capture Fullscreen (5s)</strong>, lalu segera pindah ke window fullscreen yang ingin diambil sebelum hitungan selesai.</p>
-      </section>
-
+      <section id="page-cases" class="view-page hidden"><div class="page-heading"><div><h1>Test Cases</h1><p>Pilih test case pending atau lanjutkan test case lama.</p></div></div><section class="panel"><div class="section-heading"><h2>Daftar TC</h2><button id="refreshTcListBtn" class="secondary-btn">↻ Refresh</button></div><div id="tcList" class="tc-list empty">Belum ada TC.</div></section></section>
+      <section id="page-evidence" class="view-page hidden"><div class="page-heading"><div><h1>Evidence</h1><p>Capture terbaru dan folder evidence yang tersimpan.</p></div></div><section class="panel"><h2>Latest screenshot</h2><div id="recentEvidenceDetails" class="evidence-details">Belum ada screenshot dalam sesi ini.</div><div class="page-actions"><button id="openTcBtn" class="primary-btn">Open Current TC</button><button id="openParentBtn" class="secondary-btn">Open Parent Folder</button></div></section></section>
+      <section id="page-settings" class="view-page hidden"><div class="page-heading"><div><h1>Settings</h1><p>Atur folder evidence dan tampilan aplikasi.</p></div></div><section class="panel"><label class="field-label">Parent Folder</label><div class="folder-picker"><div id="parentFolder" class="folder-value">Belum dipilih</div><button id="chooseFolderBtn" class="secondary-btn">Browse</button></div><div class="settings-row"><div><b>Appearance</b><p>Gunakan tema light atau dark.</p></div><button id="themeToggleSettings" class="secondary-btn">Toggle theme</button></div><div class="settings-row"><div><b>Current workspace</b><p>Folder yang dipakai untuk screenshot dan captions.txt.</p></div><button id="openParentSettingsBtn" class="secondary-btn">Open folder</button></div></section><section class="panel"><h2>Keyboard Shortcuts</h2><div class="shortcut-list"><div><kbd>Capture</kbd><span id="captureShortcutSettings">Ctrl/⌘ + Shift + S</span></div><div><kbd>Capture + Mark</kbd><span>Ctrl/⌘ + Shift + M</span></div><div><kbd>Undo / Redo</kbd><span>Ctrl/⌘ + Z / Ctrl/⌘ + Shift + Z</span></div><div><kbd>Next TC</kbd><span id="nextTcShortcut">Ctrl/⌘ + Shift + N</span></div><div><kbd>Pending</kbd><span id="pendingShortcut">Ctrl/⌘ + Shift + P</span></div><div><kbd>Finish</kbd><span id="finishShortcut">Ctrl/⌘ + Shift + F</span></div></div><p id="shortcutWarning" class="warning-text hidden"></p></section></section>
+      <section id="page-update" class="view-page hidden"><div class="page-heading"><div><h1>Update</h1><p>Kelola versi aplikasi melalui GitHub Releases.</p></div></div><section class="panel update-panel"><div class="section-heading"><h2>Aplikasi & Update</h2><span class="version-pill">Version: <strong id="appVersion">-</strong></span></div><p id="updateStatusText" class="update-status-text">Klik Check Update untuk mengecek versi terbaru.</p><div class="update-actions"><button id="checkUpdateBtn" class="secondary-btn">Check Update</button><button id="downloadUpdateBtn" class="primary-btn hidden">Download Update</button><button id="openReleaseBtn" class="secondary-btn hidden">Open Releases</button></div></section></section>
+      <footer class="workspace-footer"><span><i class="online-dot"></i> <span id="footerStatus">Ready</span></span><span>MyTBC · <span id="footerVersion">1.0.18</span></span></footer>
       <div id="toast" class="toast hidden"></div>
     </main>
-
-    <div id="markEditor" class="mark-overlay hidden" role="dialog" aria-modal="true" aria-label="Editor kotak merah">
-      <div class="mark-toolbar"><strong>Red Rectangle</strong><span>Drag untuk menggambar • Ctrl/⌘+Z Undo • Ctrl/⌘+Shift+Z Redo</span><button id="markCancelBtn" type="button">Esc — Batal</button><button id="markSaveBtn" type="button">Enter — Simpan</button></div>
-      <div class="mark-stage"><canvas id="markCanvas" aria-label="Screenshot, drag untuk membuat kotak merah"></canvas></div>
-    </div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
-</html>
+  </div>
+</div>
+<div id="markEditor" class="mark-overlay hidden" role="dialog" aria-modal="true" aria-label="Editor kotak merah"><div class="mark-toolbar"><strong>Red Rectangle</strong><span>Drag untuk menggambar • Ctrl/⌘+Z Undo • Ctrl/⌘+Shift+Z Redo</span><button id="markCancelBtn" type="button">Esc — Batal</button><button id="markSaveBtn" type="button">Enter — Simpan</button></div><div class="mark-stage"><canvas id="markCanvas" aria-label="Screenshot, drag untuk membuat kotak merah"></canvas></div></div>
+<script type="module" src="/src/main.js"></script></body></html>
